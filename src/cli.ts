@@ -16,7 +16,6 @@ import { gatewayCmd, configCmd, channelsCmd, mcpCmd, jobCmd } from "./cli/gatewa
 // ── Register Built-in Tools ────────────────────────────────
 import { datetimeTool } from "./tools/built-in/datetime.js";
 import { shellTool } from "./tools/built-in/shell.js";
-import { searchTool } from "./tools/built-in/search.js";
 import {
   agentListTool,
   agentAskTool,
@@ -28,16 +27,21 @@ import {
   fileListTool,
 } from "./tools/built-in/file-ops.js";
 import { videoTools } from "./tools/built-in/video.js";
+import { perplexityStyleTools } from "./tools/built-in/perplexity-search.js";
 
 registry.register(datetimeTool);
 registry.register(shellTool);
-registry.register(searchTool);
 registry.register(agentListTool);
 registry.register(agentAskTool);
 registry.register(agentSearchAllTool);
 registry.register(fileReadTool);
 registry.register(fileWriteTool);
 registry.register(fileListTool);
+
+// ── Register Perplexity-Style Search Tools ───────────────────
+for (const tool of perplexityStyleTools) {
+  registry.register(tool);
+}
 
 // ── Register Video Tools ───────────────────────────────────
 for (const tool of videoTools) {
