@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🦀 Krab - Advanced AGI Web Interface</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --secondary-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            --accent-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            --dark-bg: #0f0f23;
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --card-border: rgba(255, 255, 255, 0.1);
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.7);
+            --success: #4CAF50;
+            --warning: #FF9800;
+            --error: #F44336;
+            --shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            --shadow-hover: 0 20px 60px rgba(0, 0, 0, 0.4);
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--dark-bg);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* Animated Background */
+        .bg-animation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background: linear-gradient(45deg, #0f0f23, #1a1a2e, #16213e);
+            overflow: hidden;
+        }
+
+        .bg-animation::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(102, 126, 234, 0.1) 0%, transparent 70%);
+            animation: rotate 30s linear infinite;
+        }
+
+        .bg-animation::after {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(118, 75, 162, 0.1) 0%, transparent 70%);
+            animation: rotate 25s linear infinite reverse;
+        }
+
+        @keyframes rotate {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Header */
+        .header {
+            background: rgba(15, 15, 35, 0.8);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--card-border);
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: var(--shadow);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 28px;
+            font-weight: 700;
+            background: var(--primary-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .logo i {
+            font-size: 32px;
+            -webkit-text-fill-color: #667eea;
+        }
+
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .theme-toggle {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: var(--text-primary);
+        }
+
+        .theme-toggle:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-2px);
+        }
+
+        /* Main Container */
+        .main-container {
+            display: flex;
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 30px;
+            gap: 30px;
+            min-height: calc(100vh - 100px);
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .sidebar-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: var(--shadow);
+            transition: all 0.3s ease;
+        }
+
+        .sidebar-card:hover {
+            transform: translateY(-5px);
+            box-shadow: var(--shadow-hover);
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card-title i {
+            font-size: 20px;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* Tools Grid */
+        .tools-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+
+        .tool-item {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .tool-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-2px);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .tool-item.active {
+            background: var(--primary-gradient);
+            border-color: transparent;
+        }
+
+        .tool-item i {
+            display: block;
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            background: var(--primary-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 5px;
+        }
+
+        /* Chat Section */
+        .chat-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .chat-container {
+            flex: 1;
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-header {
+            padding: 25px 30px;
+            background: rgba(255, 255, 255, 0.03);
+            border-bottom: 1px solid var(--card-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-title {
+            font-size: 20px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .chat-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .action-button {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            border-radius: 10px;
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: var(--text-primary);
+            font-size: 14px;
+        }
+
+        .action-button:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-1px);
+        }
+
+        .chat-messages {
+            flex: 1;
+            padding: 30px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            max-height: 600px;
+        }
+
+        .chat-messages::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .chat-messages::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 4px;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
+
+        .message {
+            display: flex;
+            gap: 15px;
+            animation: slideIn 0.4s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        .message.user .message-avatar {
+            background: var(--primary-gradient);
+        }
+
+        .message.assistant .message-avatar {
+            background: var(--accent-gradient);
+        }
+
+        .message-content {
+            flex: 1;
+            max-width: 70%;
+        }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .message-sender {
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .message-time {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .message-text {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            border-radius: 15px;
+            padding: 15px 20px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        .message.user .message-text {
+            background: rgba(102, 126, 234, 0.1);
+            border-color: rgba(102, 126, 234, 0.3);
+        }
+
+        .message.assistant .message-text {
+            background: rgba(79, 172, 254, 0.1);
+            border-color: rgba(79, 172, 254, 0.3);
+        }
+
+        /* Chat Input */
+        .chat-input {
+            padding: 25px 30px;
+            background: rgba(255, 255, 255, 0.03);
+            border-top: 1px solid var(--card-border);
+        }
+
+        .input-container {
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+        }
+
+        .message-input {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--card-border);
+            border-radius: 15px;
+            padding: 15px 20px;
+            color: var(--text-primary);
+            font-size: 15px;
+            resize: none;
+            outline: none;
+            min-height: 60px;
+            max-height: 120px;
+            font-family: inherit;
+            transition: all 0.3s ease;
+        }
+
+        .message-input:focus {
+            border-color: rgba(102, 126, 234, 0.5);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .message-input::placeholder {
+            color: var(--text-secondary);
+        }
+
+        .input-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-button {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: var(--text-primary);
+            font-size: 16px;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .input-button:hover {
+            background: rgba(255, 255, 255, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .input-button.primary {
+            background: var(--primary-gradient);
+            border: none;
+            color: white;
+        }
+
+        .input-button.primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .input-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .input-button.recording {
+            background: linear-gradient(135deg, #F44336 0%, #E91E63 100%);
+            animation: recording 1.5s infinite;
+        }
+
+        @keyframes recording {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        /* Responsive Design */
+        @media (max-width: 1200px) {
+            .main-container {
+                flex-direction: column;
+            }
+            
+            .sidebar {
+                width: 100%;
+                flex-direction: row;
+                overflow-x: auto;
+            }
+            
+            .sidebar-card {
+                min-width: 300px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                padding: 15px 20px;
+            }
+            
+            .main-container {
+                padding: 20px;
+                gap: 20px;
+            }
+            
+            .sidebar {
+                flex-direction: column;
+            }
+            
+            .sidebar-card {
+                min-width: auto;
+            }
+            
+            .chat-messages {
+                padding: 20px;
+            }
+            
+            .message-content {
+                max-width: 85%;
+            }
+        }
+
+        /* Loading Animation */
+        .typing-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 15px 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            width: fit-content;
+        }
+
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-secondary);
+            animation: typing 1.4s infinite ease-in-out;
+        }
+
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes typing {
+            0%, 80%, 100% {
+                transform: scale(0.8);
+                opacity: 0.5;
+            }
+            40% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        /* Light Theme */
+        body[data-theme="light"] {
+            --dark-bg: #f8f9fa;
+            --card-bg: rgba(0, 0, 0, 0.05);
+            --card-border: rgba(0, 0, 0, 0.1);
+            --text-primary: #212529;
+            --text-secondary: rgba(0, 0, 0, 0.7);
+        }
+
+        body[data-theme="light"] .bg-animation {
+            background: linear-gradient(45deg, #f8f9fa, #e9ecef, #dee2e6);
+        }
+
+        body[data-theme="light"] .header {
+            background: rgba(255, 255, 255, 0.8);
+        }
+
+        body[data-theme="light"] .logo {
+            background: var(--primary-gradient);
+            -webkit-text-fill-color: transparent;
+        }
+
+        body[data-theme="light"] .logo i {
+            -webkit-text-fill-color: #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-animation"></div>
+    
+    <header class="header">
+        <div class="logo">
+            <i class="fas fa-crab"></i>
+            Krab AGI
+        </div>
+        <div class="header-controls">
+            <div class="status-badge">
+                <div class="status-dot"></div>
+                <span>Connected</span>
+            </div>
+            <button class="theme-toggle">
+                <i class="fas fa-moon"></i>
+            </button>
+        </div>
+    </header>
+
+    <main class="main-container">
+        <aside class="sidebar">
+            <div class="sidebar-card">
+                <div class="card-title">
+                    <i class="fas fa-tools"></i>
+                    Tools
+                </div>
+                <div class="tools-grid">
+                    <div class="tool-item active" data-tool="chat">
+                        <i class="fas fa-comments"></i>
+                        Chat
+                    </div>
+                    <div class="tool-item" data-tool="image">
+                        <i class="fas fa-image"></i>
+                        Image
+                    </div>
+                    <div class="tool-item" data-tool="code">
+                        <i class="fas fa-code"></i>
+                        Code
+                    </div>
+                    <div class="tool-item" data-tool="desktop">
+                        <i class="fas fa-desktop"></i>
+                        Desktop
+                    </div>
+                    <div class="tool-item" data-tool="web">
+                        <i class="fas fa-globe"></i>
+                        Web
+                    </div>
+                    <div class="tool-item" data-tool="voice">
+                        <i class="fas fa-microphone"></i>
+                        Voice
+                    </div>
+                    <div class="tool-item" data-tool="ai">
+                        <i class="fas fa-brain"></i>
+                        AI
+                    </div>
+                    <div class="tool-item" data-tool="security">
+                        <i class="fas fa-shield-alt"></i>
+                        Security
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar-card">
+                <div class="card-title">
+                    <i class="fas fa-chart-bar"></i>
+                    Statistics
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-value">17</div>
+                        <div class="stat-label">Features</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">50+</div>
+                        <div class="stat-label">Tools</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">15+</div>
+                        <div class="stat-label">Providers</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">99.9%</div>
+                        <div class="stat-label">Uptime</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar-card">
+                <div class="card-title">
+                    <i class="fas fa-cog"></i>
+                    Settings
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 15px;">
+                    <div class="tool-item">
+                        <i class="fas fa-robot"></i>
+                        AI Model
+                    </div>
+                    <div class="tool-item">
+                        <i class="fas fa-palette"></i>
+                        Theme
+                    </div>
+                    <div class="tool-item">
+                        <i class="fas fa-language"></i>
+                        Language
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <section class="chat-section">
+            <div class="chat-container">
+                <div class="chat-header">
+                    <div class="chat-title">
+                        <i class="fas fa-comments"></i>
+                        AGI Conversation
+                    </div>
+                    <div class="chat-actions">
+                        <button class="action-button" title="Download chat">
+                            <i class="fas fa-download"></i>
+                        </button>
+                        <button class="action-button" title="Share chat">
+                            <i class="fas fa-share"></i>
+                        </button>
+                        <button class="action-button" title="Clear chat">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="chat-messages" id="chatMessages">
+                    <!-- Messages will be dynamically added here -->
+                </div>
+
+                <div class="chat-input">
+                    <div class="input-container">
+                        <textarea 
+                            class="message-input" 
+                            placeholder="Ask Krab anything... Try: Generate an image of a futuristic city"
+                            id="messageInput"
+                        ></textarea>
+                        <div class="input-actions">
+                            <button class="input-button" title="Attach file">
+                                <i class="fas fa-paperclip"></i>
+                            </button>
+                            <button class="input-button" title="Voice input">
+                                <i class="fas fa-microphone"></i>
+                            </button>
+                            <button class="input-button primary" title="Send message" id="sendButton">
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- TypeScript Module -->
+    <script type="module" src="./index.ts"></script>
+</body>
+</html>

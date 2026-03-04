@@ -1,0 +1,36 @@
+# Render Configuration for Krab
+services:
+  - type: web
+    name: krab
+    runtime: node
+    buildCommand: npm run build
+    startCommand: npm run start:prod
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: KRAB_RENDER
+        value: true
+      - key: PORT
+        fromSecret: PORT
+    healthCheckPath: /health
+    plan: starter
+    autoDeploy: true
+
+  - type: pserv
+    name: krab-postgres
+    runtime: postgres
+    plan: starter
+    envVars:
+      - key: POSTGRES_DB
+        value: krab
+      - key: POSTGRES_USER
+        value: krab
+      - key: POSTGRES_PASSWORD
+        fromSecret: POSTGRES_PASSWORD
+    ipAllowList: []  # only accessible by other services
+
+databases:
+  - name: krab-db
+    databaseName: krab
+    user: krab
+    plan: starter

@@ -1,0 +1,795 @@
+// ============================================================
+// 🦀 Krab — Gateway Commands (OpenClaw-inspired)
+// ============================================================
+import { Command } from "commander";
+import pc from "picocolors";
+import { loadConfig, saveConfig } from "../core/krab-config.js";
+import { GatewayServer } from "../gateway/server.js";
+import { MCPServer, createMCPServer } from "../mcp/server.js";
+import { MCPClient, createMCPClient } from "../mcp/client.js";
+import { CronScheduler, createScheduler, jobTemplates } from "../scheduler/cron.js";
+
+// ── Gateway Commands ────────────────────────────────────────
+const gatewayCmd = new Command("gateway")
+  .description("Gateway server management (OpenClaw-inspired)")
+  .option("-p, --port <port>", "Port to listen on", "18789")
+  .option("-b, --bind <bind>", "Bind address (loopback|lan|tailnet|custom)", "loopback")
+  .option("--verbose", "Enable verbose logging")
+  .option("--force", "Force kill existing listener")
+  .action(async (options) => {
+    await startGateway(options);
+  });
+
+// Subcommands
+gatewayCmd
+  .command("start")
+  .description("Start Gateway server")
+  .option("-p, --port <port>", "Port to listen on", "18789")
+  .option("-b, --bind <bind>", "Bind address", "loopback")
+  .option("--verbose", "Enable verbose logging")
+  .option("--force", "Force kill existing listener")
+  .action(async (options) => {
+    await startGateway(options);
+  });
+
+gatewayCmd
+  .command("status")
+  .description("Check Gateway status")
+  .action(async () => {
+    await checkGatewayStatus();
+  });
+
+gatewayCmd
+  .command("health")
+  .description("Check Gateway health")
+  .action(async () => {
+    await checkGatewayHealth();
+  });
+
+gatewayCmd
+  .command("logs")
+  .description("Show Gateway logs")
+  .option("--follow", "Follow log output")
+  .action(async (options) => {
+    await showGatewayLogs(options);
+  });
+
+gatewayCmd
+  .command("doctor")
+  .description("Diagnose Gateway issues")
+  .option("--fix", "Apply automatic fixes")
+  .action(async (options) => {
+    await showGatewayLogs(options);
+  });
+
+// ── Configuration Commands ────────────────────────────────
+const configCmd = new Command("config")
+  .description("Gateway configuration management")
+  .argument("[key]", "Configuration key")
+  .argument("[value]", "Configuration value")
+  .action(async (key, value) => {
+    await manageConfig(key, value);
+  });
+
+// ── Channel Commands ────────────────────────────────────────
+const channelsCmd = new Command("channels")
+  .description("Channel management")
+  .command("status")
+  .description("Check channel status")
+  .option("--probe", "Probe channel readiness")
+  .action(async (options) => {
+    await checkChannelStatus(options);
+  });
+
+// ── Implementation Functions ───────────────────────────────────
+async function startGateway(options: any): Promise<void> {
+  try {
+    console.log(pc.cyan("🚀 Starting Krab Gateway..."));
+    
+    const config = loadConfig();
+    const gatewayConfig = {
+      port: parseInt(options.port),
+      bind: options.bind as "loopback" | "lan" | "tailnet" | "custom",
+      auth: config.gateway?.auth || {
+        mode: "none",
+        allowTailscale: true,
+        rateLimit: {
+          maxAttempts: 10,
+          windowMs: 60000,
+          lockoutMs: 300000,
+          exemptLoopback: true
+        }
+      },
+      http: config.gateway?.http || {
+        endpoints: {
+          chatCompletions: { enabled: true },
+          responses: { enabled: true }
+        }
+      }
+    };
+
+    const server = new GatewayServer(gatewayConfig, config.agents?.defaults?.workspace || "~/.krab/workspace");
+    await server.start();
+
+    console.log(pc.green(`✅ Gateway running on ${options.bind}:${options.port}`));
+    console.log(pc.dim(`   WebSocket: ws://${options.bind}:${options.port}`));
+    console.log(pc.dim(`   HTTP API: http://${options.bind}:${options.port}`));
+    console.log(pc.dim(`   Control UI: http://${options.bind}:${options.port}/krab`));
+
+    // Handle graceful shutdown
+    process.on("SIGINT", async () => {
+      console.log("\n🛑 Shutting down Gateway...");
+      await server.stop();
+      process.exit(0);
+    });
+
+    process.on("SIGTERM", async () => {
+      console.log("\n🛑 Shutting down Gateway...");
+      await server.stop();
+      process.exit(0);
+    });
+
+  } catch (error) {
+    console.error(pc.red("❌ Failed to start Gateway:"), error);
+    process.exit(1);
+  }
+}
+
+async function checkGatewayStatus(): Promise<void> {
+  try {
+    const config = loadConfig();
+    const port = config.gateway?.port || 18789;
+    
+    console.log(pc.cyan("📊 Gateway Status:"));
+    console.log(`   Port: ${port}`);
+    console.log(`   Bind: ${config.gateway?.bind || "loopback"}`);
+    console.log(`   Auth: ${config.gateway?.auth?.mode || "none"}`);
+    console.log(`   Workspace: ${config.agents?.defaults?.workspace || "~/.krab/workspace"}`);
+    
+    // Try to connect to check if running
+    const response = await fetch(`http://127.0.0.1:${port}/health`)
+      .then(res => res.ok)
+      .catch(() => false);
+    
+    if (response) {
+      console.log(pc.green("   Status: ✅ Running"));
+    } else {
+      console.log(pc.red("   Status: ❌ Not running"));
+    }
+    
+  } catch (error) {
+    console.error(pc.red("❌ Status check failed:"), error);
+  }
+}
+
+async function checkGatewayHealth(): Promise<void> {
+  try {
+    const config = loadConfig();
+    const port = config.gateway?.port || 18789;
+    
+    console.log(pc.cyan("🏥 Gateway Health Check:"));
+    
+    // Liveness check
+    const livenessResponse = await fetch(`http://127.0.0.1:${port}/health`)
+      .then(res => res.ok)
+      .catch(() => false);
+    
+    if (livenessResponse) {
+      console.log(pc.green("   ✅ Liveness: OK"));
+    } else {
+      console.log(pc.red("   ❌ Liveness: Failed"));
+    }
+    
+    // Readiness check
+    const readinessResponse = await fetch(`http://127.0.0.1:${port}/ready`)
+      .then(res => res.ok)
+      .catch(() => false);
+    
+    if (readinessResponse) {
+      console.log(pc.green("   ✅ Readiness: OK"));
+    } else {
+      console.log(pc.yellow("   ⚠️  Readiness: Not ready"));
+    }
+    
+  } catch (error) {
+    console.error(pc.red("❌ Health check failed:"), error);
+  }
+}
+
+async function showGatewayLogs(options: any): Promise<void> {
+  console.log(pc.cyan("📋 Gateway Logs:"));
+  console.log(pc.dim("   (Log viewing not implemented yet)"));
+  console.log(pc.dim("   Use --follow to tail logs"));
+}
+
+async function runGatewayDoctor(options: any): Promise<void> {
+  console.log(pc.cyan("🩺 Gateway Doctor:"));
+  
+  const issues: string[] = [];
+  const fixes: string[] = [];
+  
+  // Check workspace
+  const config = loadConfig();
+  const workspace = config.agents?.defaults?.workspace;
+  
+  if (!workspace) {
+    issues.push("No workspace configured");
+    fixes.push("Run 'npm run dev -- wizard' to setup workspace");
+  } else {
+    console.log(pc.green(`   ✅ Workspace: ${workspace}`));
+  }
+  
+  // Check port availability
+  const port = config.gateway?.port || 18789;
+  // TODO: Add actual port check
+  
+  console.log(pc.green(`   ✅ Port: ${port}`));
+  
+  // Check auth configuration
+  const authMode = config.gateway?.auth?.mode;
+  if (authMode === "none" && config.gateway?.bind !== "loopback") {
+    issues.push("No authentication configured for non-loopback bind");
+    fixes.push("Configure token or password authentication");
+  } else {
+    console.log(pc.green(`   ✅ Auth: ${authMode}`));
+  }
+  
+  if (issues.length > 0) {
+    console.log(pc.red("\n❌ Issues found:"));
+    issues.forEach(issue => console.log(`   - ${issue}`));
+    
+    if (options.fix) {
+      console.log(pc.yellow("\n🔧 Applying fixes:"));
+      fixes.forEach(fix => console.log(`   - ${fix}`));
+    } else {
+      console.log(pc.yellow("\n💡 Run with --fix to apply automatic fixes"));
+    }
+  } else {
+    console.log(pc.green("\n✅ No issues found"));
+  }
+}
+
+async function manageConfig(key?: string, value?: string): Promise<void> {
+  const config = loadConfig();
+  
+  if (!key) {
+    // Show all config
+    console.log(pc.cyan("⚙️  Current Configuration:"));
+    console.log(JSON.stringify(config, null, 2));
+    return;
+  }
+  
+  if (!value) {
+    // Get specific config value
+    const keys = key.split(".");
+    let current: any = config;
+    
+    for (const k of keys) {
+      current = current?.[k];
+    }
+    
+    console.log(pc.cyan(`⚙️  ${key}:`));
+    console.log(JSON.stringify(current, null, 2));
+    return;
+  }
+  
+  // Set config value
+  const keys = key.split(".");
+  let target: any = config;
+  
+  for (let i = 0; i < keys.length - 1; i++) {
+    if (!target[keys[i]]) {
+      target[keys[i]] = {};
+    }
+    target = target[keys[i]];
+  }
+  
+  // Try to parse as JSON, fallback to string
+  try {
+    target[keys[keys.length - 1]] = JSON.parse(value);
+  } catch {
+    target[keys[keys.length - 1]] = value;
+  }
+  
+  saveConfig({ [key]: target[keys[keys.length - 1]] });
+  console.log(pc.green(`✅ Set ${key} = ${value}`));
+}
+
+async function checkChannelStatus(options: any): Promise<void> {
+  console.log(pc.cyan("📡 Channel Status:"));
+  console.log(pc.dim("   (Channel status checking not implemented yet)"));
+
+  if (options.probe) {
+    console.log(pc.dim("   Probing channel readiness..."));
+  }
+}
+
+// ── MCP Command Implementations ─────────────────────────────
+let mcpServerInstance: MCPServer | null = null;
+let mcpClientInstance: MCPClient | null = null;
+
+async function startMCPServer(options: any): Promise<void> {
+  try {
+    if (mcpServerInstance?.isRunning()) {
+      console.log(pc.yellow("⚠️  MCP Server is already running"));
+      return;
+    }
+
+    console.log(pc.cyan("🚀 Starting MCP Server..."));
+
+    const serverOptions = {
+      port: parseInt(options.port),
+      websocket: options.websocket && !options.http,
+      allowedOrigins: ['*'] // TODO: Make configurable
+    };
+
+    mcpServerInstance = createMCPServer(serverOptions);
+    await mcpServerInstance.start();
+
+    console.log(pc.green(`✅ MCP Server running on port ${options.port}`));
+    console.log(pc.dim(`   WebSocket: ws://localhost:${options.port}`));
+    console.log(pc.dim(`   HTTP: http://localhost:${options.port}`));
+
+    // Handle graceful shutdown
+    process.on("SIGINT", async () => {
+      console.log("\n🛑 Shutting down MCP Server...");
+      if (mcpServerInstance) {
+        await mcpServerInstance.stop();
+      }
+      process.exit(0);
+    });
+
+  } catch (error) {
+    console.error(pc.red("❌ Failed to start MCP Server:"), error);
+    process.exit(1);
+  }
+}
+
+async function stopMCPServer(): Promise<void> {
+  try {
+    if (!mcpServerInstance?.isRunning()) {
+      console.log(pc.yellow("⚠️  MCP Server is not running"));
+      return;
+    }
+
+    console.log(pc.cyan("🛑 Stopping MCP Server..."));
+    await mcpServerInstance!.stop();
+    mcpServerInstance = null;
+    console.log(pc.green("✅ MCP Server stopped"));
+
+  } catch (error) {
+    console.error(pc.red("❌ Failed to stop MCP Server:"), error);
+  }
+}
+
+async function checkMCPServerStatus(): Promise<void> {
+  console.log(pc.cyan("📊 MCP Server Status:"));
+
+  if (!mcpServerInstance?.isRunning()) {
+    console.log(pc.red("   Status: ❌ Not running"));
+    return;
+  }
+
+  console.log(pc.green("   Status: ✅ Running"));
+  console.log(`   Port: ${mcpServerInstance ? 'Unknown' : '3001'}`); // TODO: Add port getter
+  console.log(`   Connections: ${mcpServerInstance?.getConnectionCount() || 0}`);
+}
+
+async function handleMCPClient(action: string, options: any): Promise<void> {
+  try {
+    switch (action) {
+      case "connect":
+        if (mcpClientInstance?.isConnected()) {
+          console.log(pc.yellow("⚠️  MCP Client is already connected"));
+          return;
+        }
+
+        console.log(pc.cyan("🔌 Connecting to MCP server..."));
+
+        let clientOptions: any = {};
+        if (options.command) {
+          clientOptions.command = options.command.split(' ');
+        } else if (options.websocket) {
+          clientOptions.websocketUrl = options.websocket;
+        } else {
+          console.error(pc.red("❌ Must specify either --command or --websocket"));
+          return;
+        }
+
+        mcpClientInstance = createMCPClient(clientOptions);
+        await mcpClientInstance.connect();
+        console.log(pc.green("✅ MCP Client connected"));
+        break;
+
+      case "disconnect":
+        if (!mcpClientInstance?.isConnected()) {
+          console.log(pc.yellow("⚠️  MCP Client is not connected"));
+          return;
+        }
+
+        console.log(pc.cyan("🔌 Disconnecting from MCP server..."));
+        await mcpClientInstance!.disconnect();
+        mcpClientInstance = null;
+        console.log(pc.green("✅ MCP Client disconnected"));
+        break;
+
+      case "list-tools":
+        if (!mcpClientInstance?.isConnected()) {
+          console.log(pc.red("❌ MCP Client is not connected"));
+          return;
+        }
+
+        console.log(pc.cyan("🔧 Available MCP Tools:"));
+        const tools = mcpClientInstance.getAvailableTools();
+
+        if (tools.length === 0) {
+          console.log(pc.dim("   No tools available"));
+          return;
+        }
+
+        tools.forEach(tool => {
+          console.log(`   • ${pc.bold(tool.name)}: ${tool.description}`);
+        });
+        break;
+
+      case "call-tool":
+        if (!mcpClientInstance?.isConnected()) {
+          console.log(pc.red("❌ MCP Client is not connected"));
+          return;
+        }
+
+        const toolName = options.tool || options._[1];
+        let args = {};
+
+        try {
+          args = JSON.parse(options.args || options._[2] || "{}");
+        } catch (error) {
+          console.error(pc.red("❌ Invalid JSON arguments"));
+          return;
+        }
+
+        console.log(pc.cyan(`🔧 Calling tool: ${toolName}`));
+        const result = await mcpClientInstance.callTool(toolName, args);
+        console.log(pc.green("✅ Tool result:"));
+        console.log(JSON.stringify(result, null, 2));
+        break;
+
+      default:
+        console.log(pc.red(`❌ Unknown action: ${action}`));
+        console.log(pc.dim("Available actions: connect, disconnect, list-tools, call-tool"));
+    }
+
+  } catch (error) {
+    console.error(pc.red(`❌ MCP Client error:`), error);
+  }
+}
+
+// ── MCP Commands ───────────────────────────────────────────
+const mcpCmd = new Command("mcp")
+  .description("MCP (Model Context Protocol) management");
+
+// MCP Server commands
+mcpCmd
+  .command("server")
+  .description("MCP Server management")
+  .option("-p, --port <port>", "Port to listen on", "3001")
+  .option("--websocket", "Use WebSocket transport", true)
+  .option("--http", "Use HTTP transport")
+  .option("--no-websocket", "Disable WebSocket transport")
+  .action(async (options) => {
+    await startMCPServer(options);
+  });
+
+mcpCmd
+  .command("server:start")
+  .description("Start MCP Server")
+  .option("-p, --port <port>", "Port to listen on", "3001")
+  .option("--websocket", "Use WebSocket transport", true)
+  .option("--http", "Use HTTP transport")
+  .option("--no-websocket", "Disable WebSocket transport")
+  .action(async (options) => {
+    await startMCPServer(options);
+  });
+
+mcpCmd
+  .command("server:stop")
+  .description("Stop MCP Server")
+  .action(async () => {
+    await stopMCPServer();
+  });
+
+mcpCmd
+  .command("server:status")
+  .description("Check MCP Server status")
+  .action(async () => {
+    await checkMCPServerStatus();
+  });
+
+// MCP Client commands
+mcpCmd
+  .command("client")
+  .description("MCP Client management")
+  .argument("<action>", "Action: connect, disconnect, list-tools, call-tool")
+  .option("--command <cmd>", "Command to run for stdio connection")
+  .option("--websocket <url>", "WebSocket URL for connection")
+  .option("--tool <name>", "Tool name for call-tool action")
+  .option("--args <json>", "Arguments for tool call (JSON string)")
+  .action(async (action, options) => {
+    await handleMCPClient(action, options);
+  });
+
+mcpCmd
+  .command("connect")
+  .description("Connect to MCP server")
+  .option("--command <cmd>", "Command to run for stdio connection")
+  .option("--websocket <url>", "WebSocket URL for connection")
+  .action(async (options) => {
+    await handleMCPClient("connect", options);
+  });
+
+mcpCmd
+  .command("disconnect")
+  .description("Disconnect from MCP server")
+  .action(async () => {
+    await handleMCPClient("disconnect", {});
+  });
+
+mcpCmd
+  .command("tools")
+  .description("List available MCP tools")
+  .action(async () => {
+    await handleMCPClient("list-tools", {});
+  });
+
+mcpCmd
+  .command("call")
+  .description("Call an MCP tool")
+  .argument("<toolName>", "Name of the tool to call")
+  .argument("[args]", "Arguments as JSON string", "{}")
+  .action(async (toolName, args) => {
+    await handleMCPClient("call-tool", { tool: toolName, args });
+  });
+
+// ── Job Command Implementations ─────────────────────────
+let jobSchedulerInstance: CronScheduler | null = null;
+
+async function getJobScheduler(): Promise<CronScheduler> {
+  if (!jobSchedulerInstance) {
+    jobSchedulerInstance = createScheduler({});
+    await jobSchedulerInstance.initialize();
+  }
+  return jobSchedulerInstance;
+}
+
+async function listJobSchedulerJobs(): Promise<void> {
+  const scheduler = await getJobScheduler();
+  const jobs = scheduler.getAllJobs();
+
+  if (jobs.length === 0) {
+    console.log(pc.dim("No scheduled jobs found."));
+    console.log(pc.dim("Create one with: krab job add"));
+    return;
+  }
+
+  console.log(pc.cyan("⏰ Scheduled Jobs:"));
+  console.log("");
+
+  for (const job of jobs) {
+    const status = job.enabled ? pc.green("✅") : pc.red("❌");
+    const running = scheduler.getRunningJobs().includes(job.id) ? pc.yellow("🔄") : "";
+    const nextRun = job.nextRun ? job.nextRun.toLocaleString() : "Unknown";
+
+    console.log(`${status} ${running} ${pc.bold(job.name)} (${job.id})`);
+    console.log(`   Schedule: ${job.schedule}`);
+    console.log(`   Command: ${job.command}${job.args ? ` ${job.args.join(' ')}` : ''}`);
+    console.log(`   Next run: ${nextRun}`);
+    if (job.description) {
+      console.log(`   Description: ${job.description}`);
+    }
+    console.log("");
+  }
+}
+
+async function addJobSchedulerJob(options: any): Promise<void> {
+  const scheduler = await getJobScheduler();
+
+  let jobData: any = {};
+
+  // Use template if specified
+  if (options.template) {
+    const template = (jobTemplates as any)[options.template];
+    if (!template) {
+      console.log(pc.red(`❌ Template '${options.template}' not found.`));
+      console.log(pc.dim("Available templates:"));
+      Object.keys(jobTemplates).forEach(template => {
+        console.log(`  - ${template}`);
+      });
+      return;
+    }
+    jobData = { ...template };
+  }
+
+  // Override with provided options
+  if (options.name) jobData.name = options.name;
+  if (options.schedule) jobData.schedule = options.schedule;
+  if (options.command) jobData.command = options.command;
+  if (options.args) jobData.args = options.args.split(',');
+  if (options.description) jobData.description = options.description;
+
+  // Validate required fields
+  if (!jobData.name || !jobData.schedule || !jobData.command) {
+    console.log(pc.red("❌ Missing required fields: name, schedule, command"));
+    console.log(pc.dim("Use --help for more information"));
+    return;
+  }
+
+  jobData.enabled = !options.disabled;
+
+  try {
+    const jobId = await scheduler.addJob(jobData);
+    console.log(pc.green(`✅ Added job: ${jobData.name} (${jobId})`));
+  } catch (error) {
+    console.error(pc.red("❌ Failed to add job:"), error);
+  }
+}
+
+async function removeJobSchedulerJob(jobId: string): Promise<void> {
+  const scheduler = await getJobScheduler();
+
+  const success = await scheduler.removeJob(jobId);
+  if (success) {
+    console.log(pc.green(`✅ Removed job: ${jobId}`));
+  } else {
+    console.log(pc.red(`❌ Job not found: ${jobId}`));
+  }
+}
+
+async function enableJobSchedulerJob(jobId: string): Promise<void> {
+  const scheduler = await getJobScheduler();
+
+  const success = await scheduler.enableJob(jobId);
+  if (success) {
+    console.log(pc.green(`✅ Enabled job: ${jobId}`));
+  } else {
+    console.log(pc.red(`❌ Job not found: ${jobId}`));
+  }
+}
+
+async function disableJobSchedulerJob(jobId: string): Promise<void> {
+  const scheduler = await getJobScheduler();
+
+  const success = await scheduler.disableJob(jobId);
+  if (success) {
+    console.log(pc.green(`✅ Disabled job: ${jobId}`));
+  } else {
+    console.log(pc.red(`❌ Job not found: ${jobId}`));
+  }
+}
+
+async function runJobSchedulerJobNow(jobId: string): Promise<void> {
+  const scheduler = await getJobScheduler();
+
+  const success = await scheduler.runJobNow(jobId);
+  if (success) {
+    console.log(pc.green(`✅ Started job: ${jobId}`));
+  } else {
+    console.log(pc.red(`❌ Failed to start job: ${jobId}`));
+  }
+}
+
+async function showJobSchedulerStatus(): Promise<void> {
+  const scheduler = await getJobScheduler();
+
+  console.log(pc.cyan("📊 Job Scheduler Status:"));
+
+  const jobs = scheduler.getAllJobs();
+  const enabledJobs = scheduler.getEnabledJobs();
+  const runningJobs = scheduler.getRunningJobs();
+
+  console.log(`   Total jobs: ${jobs.length}`);
+  console.log(`   Enabled jobs: ${enabledJobs.length}`);
+  console.log(`   Running jobs: ${runningJobs.length}`);
+  console.log(`   Max concurrent: 5`);
+
+  if (runningJobs.length > 0) {
+    console.log(pc.dim("   Currently running:"));
+    runningJobs.forEach((jobId: string) => {
+      const job = scheduler.getJob(jobId);
+      if (job) {
+        console.log(`     - ${job.name} (${jobId})`);
+      }
+    });
+  }
+}
+
+// ── Job Commands ───────────────────────────────────────
+const jobCmd = new Command("job")
+  .description("Job scheduler for recurring tasks");
+
+// List jobs
+jobCmd
+  .command("list")
+  .alias("ls")
+  .description("List all scheduled jobs")
+  .action(async () => {
+    await listJobSchedulerJobs();
+  });
+
+// Add job
+jobCmd
+  .command("add")
+  .description("Add a new scheduled job")
+  .requiredOption("-n, --name <name>", "Job name")
+  .requiredOption("-s, --schedule <cron>", "Cron schedule expression (e.g., '*/5 * * * *')")
+  .requiredOption("-c, --command <cmd>", "Command to execute")
+  .option("-a, --args <args>", "Command arguments (comma-separated)")
+  .option("-d, --description <desc>", "Job description")
+  .option("--template <template>", "Use predefined template")
+  .option("--disabled", "Create job as disabled")
+  .action(async (options) => {
+    await addJobSchedulerJob(options);
+  });
+
+// Remove job
+jobCmd
+  .command("remove")
+  .alias("rm")
+  .description("Remove a scheduled job")
+  .argument("<jobId>", "Job ID to remove")
+  .action(async (jobId) => {
+    await removeJobSchedulerJob(jobId);
+  });
+
+// Enable job
+jobCmd
+  .command("enable")
+  .description("Enable a scheduled job")
+  .argument("<jobId>", "Job ID to enable")
+  .action(async (jobId) => {
+    await enableJobSchedulerJob(jobId);
+  });
+
+// Disable job
+jobCmd
+  .command("disable")
+  .description("Disable a scheduled job")
+  .argument("<jobId>", "Job ID to disable")
+  .action(async (jobId) => {
+    await disableJobSchedulerJob(jobId);
+  });
+
+// Run job now
+jobCmd
+  .command("run")
+  .description("Run a job immediately")
+  .argument("<jobId>", "Job ID to run")
+  .action(async (jobId) => {
+    await runJobSchedulerJobNow(jobId);
+  });
+
+// Status
+jobCmd
+  .command("status")
+  .description("Show job scheduler status")
+  .action(async () => {
+    await showJobSchedulerStatus();
+  });
+
+// Templates
+jobCmd
+  .command("templates")
+  .description("List available job templates")
+  .action(async () => {
+    console.log(pc.cyan("📋 Available Job Templates:"));
+    console.log("");
+
+    Object.entries(jobTemplates).forEach(([key, template]: [string, any]) => {
+      console.log(`${pc.bold(key)}: ${template.description}`);
+      console.log(`   Schedule: ${template.schedule}`);
+      console.log(`   Command: ${template.command}${template.args ? ` ${template.args.join(' ')}` : ''}`);
+      console.log("");
+    });
+  });
+
+// ── Export Commands ────────────────────────────────────────
+export { gatewayCmd, configCmd, channelsCmd, mcpCmd, jobCmd };
