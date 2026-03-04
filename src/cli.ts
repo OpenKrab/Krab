@@ -27,6 +27,7 @@ import {
   fileWriteTool,
   fileListTool,
 } from "./tools/built-in/file-ops.js";
+import { videoTools } from "./tools/built-in/video.js";
 
 registry.register(datetimeTool);
 registry.register(shellTool);
@@ -37,6 +38,11 @@ registry.register(agentSearchAllTool);
 registry.register(fileReadTool);
 registry.register(fileWriteTool);
 registry.register(fileListTool);
+
+// ── Register Video Tools ───────────────────────────────────
+for (const tool of videoTools) {
+  registry.register(tool);
+}
 
 // ── Register Voice Tools ────────────────────────────────
 import { voiceTools } from "./voice/tools.js";
