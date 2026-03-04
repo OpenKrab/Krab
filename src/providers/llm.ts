@@ -31,7 +31,8 @@ function createModel(config: ProviderConfig) {
     case "opencode":
     case "pollinations":
     case "deepseek":
-    case "ollama": {
+    case "ollama":
+    case "openrouter": {
       const openai = createOpenAI({
         apiKey: config.apiKey || "ollama",
         baseURL: config.baseURL,

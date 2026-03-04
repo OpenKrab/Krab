@@ -64,6 +64,8 @@ export interface ProviderConfig {
     | "opencode"
     | "pollinations"
     | "deepseek"
+    | "ollama"
+    | "openrouter"
     | string;
   model: string;
   apiKey?: string;
