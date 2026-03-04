@@ -11,6 +11,7 @@ import { logger } from "./utils/logger.js";
 import { GatewayServer } from "./gateway/server.js";
 import { runChat } from "./tui/chat.js";
 import { runWizard } from "./tui/wizard.js";
+import { startTUI } from "./tui/ink-app.js";
 import { gatewayCmd, configCmd, channelsCmd, mcpCmd, jobCmd } from "./cli/gateway-commands.js";
 
 // ── Register Built-in Tools ────────────────────────────────
@@ -289,8 +290,13 @@ async function startChat() {
 
 program
   .command("chat")
-  .description("Start interactive chat with Krab")
+  .description("Start interactive chat with Krab (classic mode)")
   .action(() => runChat());
+
+program
+  .command("tui")
+  .description("Start interactive chat with Krab using modern Ink-based TUI")
+  .action(() => startTUI());
 
 // gatewayCmd, configCmd, channelsCmd, mcpCmd, jobCmd already added above
 
