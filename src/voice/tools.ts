@@ -15,10 +15,12 @@ let ttsInstance: TextToSpeech | null = null;
 
 async function getSTTInstance(): Promise<SpeechToText> {
   if (!sttInstance) {
+    // Use OpenRouter if API key is available, otherwise use OpenAI
+    const useOpenRouter = !!process.env.OPENROUTER_API_KEY;
     sttInstance = createSTT({
-      provider: "openai",
-      apiKey: process.env.OPENAI_API_KEY,
-      language: "th" // Thai by default
+      provider: useOpenRouter ? "openrouter" : "openai",
+      model: useOpenRouter ? "google/gemini-2.5-flash" : "whisper-1",
+      language: "th"
     });
     await sttInstance.initialize();
   }
@@ -27,11 +29,13 @@ async function getSTTInstance(): Promise<SpeechToText> {
 
 async function getTTSInstance(): Promise<TextToSpeech> {
   if (!ttsInstance) {
+    // Use OpenRouter if API key is available, otherwise use OpenAI
+    const useOpenRouter = !!process.env.OPENROUTER_API_KEY;
     ttsInstance = createTTS({
-      provider: "openai",
-      apiKey: process.env.OPENAI_API_KEY,
+      provider: useOpenRouter ? "openrouter" : "openai",
       voice: "alloy",
-      speed: 1.0
+      model: useOpenRouter ? "openai/gpt-4o-audio-preview" : "tts-1",
+      outputFormat: "mp3"
     });
     await ttsInstance.initialize();
   }
@@ -56,7 +60,7 @@ export const voiceTranscribeTool: Tool = {
       },
       provider: {
         type: "string",
-        enum: ["openai", "whisper-api"],
+        enum: ["openai", "whisper-api", "openrouter"],
         description: "STT provider to use",
         default: "openai"
       }
@@ -144,6 +148,12 @@ export const voiceSynthesizeTool: Tool = {
         description: "Audio output format",
         default: "mp3"
       },
+      provider: {
+        type: "string",
+        enum: ["openai", "edge-tts", "openrouter"],
+        description: "TTS provider to use",
+        default: "openai"
+      },
       saveToFile: {
         type: "string",
         description: "Optional: Save audio to file path"
@@ -163,6 +173,7 @@ export const voiceSynthesizeTool: Tool = {
       if (args.voice) options.voice = args.voice;
       if (args.speed) options.speed = args.speed;
       if (args.outputFormat) options.outputFormat = args.outputFormat;
+      if (args.provider) options.provider = args.provider;
       tts.updateOptions(options);
 
       let result: TTSResult;

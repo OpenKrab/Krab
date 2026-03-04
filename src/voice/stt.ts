@@ -9,12 +9,13 @@ import * as path from "path";
 let OpenAI: any = null;
 
 export interface STTOptions {
-  provider?: "openai" | "whisper-api" | "local-whisper";
+  provider?: "openai" | "whisper-api" | "local-whisper" | "openrouter";
   apiKey?: string;
   model?: string;
   language?: string;
   temperature?: number;
   responseFormat?: "json" | "text" | "srt" | "verbose_json" | "vtt";
+  baseURL?: string;
 }
 
 export interface STTResult {
@@ -36,11 +37,12 @@ export class SpeechToText {
   constructor(options: STTOptions = {}) {
     this.options = {
       provider: options.provider || "openai",
-      apiKey: options.apiKey || process.env.OPENAI_API_KEY || "",
+      apiKey: options.apiKey || process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || "",
       model: options.model || "whisper-1",
       language: options.language || "th", // Thai by default
       temperature: options.temperature || 0,
       responseFormat: options.responseFormat || "json",
+      baseURL: options.baseURL || (options.provider === "openrouter" ? "https://openrouter.ai/api/v1" : undefined),
       ...options
     };
   }
@@ -77,7 +79,7 @@ export class SpeechToText {
         throw new Error(`Audio file not found: ${audioFilePath}`);
       }
 
-      // Check file size (OpenAI has 25MB limit)
+      // Check file size (25MB limit)
       const stats = fs.statSync(audioFilePath);
       const maxSize = 25 * 1024 * 1024; // 25MB
       if (stats.size > maxSize) {
@@ -91,36 +93,19 @@ export class SpeechToText {
         throw new Error(`Unsupported audio format: ${ext}. Supported: ${supportedFormats.join(', ')}`);
       }
 
-      // Create OpenAI client
-      const openai = new OpenAI({
-        apiKey: this.options.apiKey
-      });
+      let result: STTResult;
 
-      // Prepare transcription request
-      const transcriptionRequest = {
-        file: fs.createReadStream(audioFilePath),
-        model: this.options.model,
-        language: this.options.language,
-        temperature: this.options.temperature,
-        response_format: this.options.responseFormat
-      };
+      switch (this.options.provider) {
+        case "openrouter":
+          result = await this.transcribeWithOpenRouter(audioFilePath);
+          break;
 
-      // Make API call
-      const transcription = await openai.audio.transcriptions.create(transcriptionRequest);
-
-      // Process response
-      const result: STTResult = {
-        text: typeof transcription === 'string' ? transcription : transcription.text,
-        language: this.options.language,
-        confidence: (transcription as any).confidence,
-        duration: (transcription as any).duration,
-        segments: (transcription as any).segments?.map((segment: any) => ({
-          start: segment.start,
-          end: segment.end,
-          text: segment.text,
-          confidence: segment.confidence
-        }))
-      };
+        case "openai":
+        case "whisper-api":
+        default:
+          result = await this.transcribeWithOpenAI(audioFilePath);
+          break;
+      }
 
       logger.info(`[STT] Transcription completed: ${result.text.substring(0, 100)}...`);
       return result;
@@ -128,6 +113,122 @@ export class SpeechToText {
     } catch (error) {
       logger.error("[STT] Transcription failed:", error);
       throw new Error(`STT transcription failed: ${(error as Error).message}`);
+    }
+  }
+
+  private async transcribeWithOpenAI(audioFilePath: string): Promise<STTResult> {
+    const openai = new OpenAI({
+      apiKey: this.options.apiKey
+    });
+
+    // Prepare transcription request
+    const transcriptionRequest = {
+      file: fs.createReadStream(audioFilePath),
+      model: this.options.model,
+      language: this.options.language,
+      temperature: this.options.temperature,
+      response_format: this.options.responseFormat
+    };
+
+    // Make API call
+    const transcription = await openai.audio.transcriptions.create(transcriptionRequest);
+
+    // Process response
+    return {
+      text: typeof transcription === 'string' ? transcription : transcription.text,
+      language: this.options.language,
+      confidence: (transcription as any).confidence,
+      duration: (transcription as any).duration,
+      segments: (transcription as any).segments?.map((segment: any) => ({
+        start: segment.start,
+        end: segment.end,
+        text: segment.text,
+        confidence: segment.confidence
+      }))
+    };
+  }
+
+  private async transcribeWithOpenRouter(audioFilePath: string): Promise<STTResult> {
+    const apiKey = this.options.apiKey || process.env.OPENROUTER_API_KEY;
+    
+    if (!apiKey) {
+      throw new Error("OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.");
+    }
+
+    // Read and encode audio file to base64
+    const audioBuffer = fs.readFileSync(audioFilePath);
+    const base64Audio = audioBuffer.toString('base64');
+
+    // Determine format from file extension
+    const ext = path.extname(audioFilePath).toLowerCase().replace('.', '');
+    const formatMap: Record<string, string> = {
+      'mp3': 'mp3',
+      'mp4': 'mp4',
+      'm4a': 'm4a',
+      'wav': 'wav',
+      'webm': 'webm',
+      'flac': 'flac',
+      'ogg': 'ogg',
+      'mpeg': 'mpeg',
+      'mpga': 'mpga'
+    };
+    const audioFormat = formatMap[ext] || 'wav';
+
+    // OpenRouter models that support audio input
+    const model = this.options.model || "google/gemini-2.5-flash";
+
+    try {
+      logger.info(`[STT] Transcribing with OpenRouter: ${model}`);
+
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://krab.dev",
+          "X-OpenRouter-Title": "Krab"
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: "Please transcribe this audio file."
+                },
+                {
+                  type: "input_audio",
+                  input_audio: {
+                    data: base64Audio,
+                    format: audioFormat
+                  }
+                }
+              ]
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json() as any;
+      const text = data.choices?.[0]?.message?.content || "";
+
+      return {
+        text,
+        language: this.options.language,
+        confidence: undefined, // OpenRouter doesn't provide confidence scores
+        duration: undefined
+      };
+
+    } catch (error: any) {
+      logger.error("[STT] OpenRouter transcription failed:", error.message);
+      throw error;
     }
   }
 

@@ -10,12 +10,13 @@ let OpenAI: any = null;
 let EdgeTTS: any = null;
 
 export interface TTSOptions {
-  provider?: "openai" | "edge-tts" | "elevenlabs";
+  provider?: "openai" | "edge-tts" | "elevenlabs" | "openrouter";
   apiKey?: string;
   voice?: string;
   model?: string;
   speed?: number;
   outputFormat?: "mp3" | "wav" | "flac" | "aac";
+  baseURL?: string;
 }
 
 export interface TTSResult {
@@ -31,11 +32,12 @@ export class TextToSpeech {
   constructor(options: TTSOptions = {}) {
     this.options = {
       provider: options.provider || "openai",
-      apiKey: options.apiKey || process.env.OPENAI_API_KEY || "",
+      apiKey: options.apiKey || process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY || "",
       voice: options.voice || "alloy", // OpenAI default
       model: options.model || "tts-1",
       speed: options.speed || 1.0,
       outputFormat: options.outputFormat || "mp3",
+      baseURL: options.baseURL || (options.provider === "openrouter" ? "https://openrouter.ai/api/v1" : undefined),
       ...options
     };
   }
@@ -95,6 +97,10 @@ export class TextToSpeech {
 
         case "edge-tts":
           result = await this.synthesizeWithEdgeTTS(text, opts);
+          break;
+
+        case "openrouter":
+          result = await this.synthesizeWithOpenRouter(text, opts);
           break;
 
         default:
@@ -165,6 +171,124 @@ export class TextToSpeech {
 
     } catch (error) {
       logger.error("[TTS] EdgeTTS synthesis failed:", error);
+      throw error;
+    }
+  }
+
+  private async synthesizeWithOpenRouter(text: string, opts: TTSOptions): Promise<TTSResult> {
+    const apiKey = opts.apiKey || process.env.OPENROUTER_API_KEY;
+    
+    if (!apiKey) {
+      throw new Error("OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.");
+    }
+
+    // Map output format to OpenRouter format
+    const formatMap: Record<string, string> = {
+      "mp3": "mp3",
+      "wav": "wav",
+      "flac": "flac",
+      "aac": "aac"
+    };
+    const audioFormat = formatMap[opts.outputFormat || "mp3"] || "mp3";
+
+    // OpenRouter models that support audio output
+    const model = opts.model || "openai/gpt-4o-audio-preview";
+    const voice = opts.voice || "alloy";
+
+    try {
+      logger.info(`[TTS] Synthesizing with OpenRouter: ${model}, voice: ${voice}`);
+
+      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://krab.dev",
+          "X-OpenRouter-Title": "Krab"
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "user",
+              content: text
+            }
+          ],
+          modalities: ["text", "audio"],
+          audio: {
+            voice,
+            format: audioFormat
+          },
+          stream: true
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`OpenRouter API error: ${response.status} - ${errorText}`);
+      }
+
+      if (!response.body) {
+        throw new Error("No response body from OpenRouter");
+      }
+
+      // Process streaming response
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      const audioDataChunks: string[] = [];
+      const transcriptChunks: string[] = [];
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") continue;
+
+          try {
+            const chunk = JSON.parse(data);
+            const delta = chunk.choices?.[0]?.delta;
+            const audio = delta?.audio;
+            
+            if (audio?.data) {
+              audioDataChunks.push(audio.data);
+            }
+            if (audio?.transcript) {
+              transcriptChunks.push(audio.transcript);
+            }
+          } catch (e) {
+            // Skip invalid JSON
+          }
+        }
+      }
+
+      if (audioDataChunks.length === 0) {
+        throw new Error("No audio data received from OpenRouter");
+      }
+
+      // Combine and decode base64 audio
+      const fullAudioB64 = audioDataChunks.join("");
+      const audioBuffer = Buffer.from(fullAudioB64, "base64");
+
+      const transcript = transcriptChunks.join("");
+      logger.info(`[TTS] OpenRouter synthesis completed: ${audioBuffer.length} bytes, transcript: "${transcript.substring(0, 50)}..."`);
+
+      return {
+        audioData: audioBuffer,
+        contentType: `audio/${opts.outputFormat}`,
+        duration: this.estimateDuration(text, opts.speed || 1.0)
+      };
+
+    } catch (error: any) {
+      logger.error("[TTS] OpenRouter synthesis failed:", error.message);
       throw error;
     }
   }
