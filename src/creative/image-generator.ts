@@ -10,7 +10,7 @@ import * as crypto from 'crypto';
 
 export interface ImageGenerationOptions {
   prompt: string;
-  model?: 'dall-e-2' | 'dall-e-3' | 'stable-diffusion' | 'midjourney';
+  model?: 'dall-e-2' | 'dall-e-3' | 'stable-diffusion' | 'midjourney' | 'openrouter';
   size?: '256x256' | '512x512' | '1024x1024' | '1792x1024' | '1024x1792';
   quality?: 'standard' | 'hd';
   style?: 'natural' | 'vivid' | 'anime' | 'realistic';
@@ -19,6 +19,7 @@ export interface ImageGenerationOptions {
   steps?: number;
   guidance?: number;
   outputFormat?: 'png' | 'jpg' | 'webp';
+  aspectRatio?: '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9';
 }
 
 export interface ImageEditOptions {
@@ -61,7 +62,8 @@ export class ImageGenerator {
     this.apiKeys = {
       openai: process.env.OPENAI_API_KEY || '',
       stability: process.env.STABILITY_API_KEY || '',
-      midjourney: process.env.MIDJOURNEY_API_KEY || ''
+      midjourney: process.env.MIDJOURNEY_API_KEY || '',
+      openrouter: process.env.OPENROUTER_API_KEY || ''
     };
   }
 
@@ -91,8 +93,16 @@ export class ImageGenerator {
         case 'midjourney':
           result = await this.generateWithMidjourney(options, imageId);
           break;
+        case 'openrouter':
+          result = await this.generateWithOpenRouter(options, imageId);
+          break;
         default:
-          result = await this.generateWithDalle(options, imageId);
+          // Default to OpenRouter if API key is available
+          if (this.apiKeys.openrouter) {
+            result = await this.generateWithOpenRouter(options, imageId);
+          } else {
+            result = await this.generateWithDalle(options, imageId);
+          }
       }
 
       logger.info(`[ImageGenerator] Image generated successfully: ${result.localPath || result.url}`);
@@ -195,6 +205,97 @@ export class ImageGenerator {
         simulated: true
       }
     };
+  }
+
+  private async generateWithOpenRouter(options: ImageGenerationOptions, imageId: string): Promise<GeneratedImage> {
+    if (!this.apiKeys.openrouter) {
+      throw new Error('OpenRouter API key not configured');
+    }
+
+    const model = options.model || 'google/gemini-2.0-flash-preview-05-20';
+    const aspectRatio = options.aspectRatio || '1:1';
+    
+    // Map aspect ratio to OpenRouter format
+    const aspectRatioMap: Record<string, string> = {
+      '1:1': '1:1',
+      '2:3': '2:3',
+      '3:2': '3:2',
+      '3:4': '3:4',
+      '4:3': '4:3',
+      '4:5': '4:5',
+      '5:4': '5:4',
+      '9:16': '9:16',
+      '16:9': '16:9',
+      '21:9': '21:9'
+    };
+
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKeys.openrouter}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://krab.dev',
+          'X-OpenRouter-Title': 'Krab'
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: 'user',
+              content: options.prompt
+            }
+          ],
+          modalities: ['image', 'text'],
+          image_config: {
+            aspect_ratio: aspectRatioMap[aspectRatio] || '1:1'
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`OpenRouter API error: ${response.status} - ${error}`);
+      }
+
+      const data = await response.json() as any;
+      
+      // Extract image from response
+      const message = data.choices?.[0]?.message;
+      const images = message?.images || [];
+      
+      if (images.length === 0) {
+        // If no images in response, check for text (some models return text instead)
+        const textContent = message?.content || '';
+        logger.warn('[ImageGenerator] No images in OpenRouter response, text:', textContent.substring(0, 100));
+        throw new Error('No images generated. Model may not support image generation.');
+      }
+
+      // Save the generated image
+      const imageData = images[0].image_url.url;
+      const base64Data = imageData.replace(/^data:image\/\w+;base64,/,);
+      const imageBuffer = Buffer.from(base64Data, 'base64');
+      
+      const outputPath = path.join(this.outputDir, `${imageId}.png`);
+      fs.writeFileSync(outputPath, imageBuffer);
+
+      return {
+        id: imageId,
+        localPath: outputPath,
+        prompt: options.prompt,
+        model: 'openrouter/' + model,
+        size: aspectRatio,
+        createdAt: new Date(),
+        metadata: {
+          aspectRatio,
+          textResponse: message?.content?.substring(0, 200)
+        }
+      };
+
+    } catch (error: any) {
+      logger.error('[ImageGenerator] OpenRouter generation failed:', error.message);
+      throw error;
+    }
   }
 
   async editImage(options: ImageEditOptions): Promise<GeneratedImage> {

@@ -346,7 +346,7 @@ export const imageGenerationTool: Tool = {
   description: "Generate images using AI models like DALL-E, Stable Diffusion, and Midjourney with customizable prompts, styles, and parameters.",
   parameters: z.object({
     prompt: z.string().describe("Text description of the image to generate"),
-    model: z.enum(["dall-e-2", "dall-e-3", "stable-diffusion", "midjourney"]).optional().describe("AI model to use for generation"),
+    model: z.enum(["dall-e-2", "dall-e-3", "stable-diffusion", "midjourney", "openrouter"]).optional().describe("AI model to use for generation"),
     size: z.enum(["256x256", "512x512", "1024x1024", "1792x1024", "1024x1792"]).optional().describe("Image size/resolution"),
     quality: z.enum(["standard", "hd"]).optional().describe("Image quality (DALL-E only)"),
     style: z.enum(["natural", "vivid", "anime", "realistic"]).optional().describe("Image style"),
@@ -354,7 +354,8 @@ export const imageGenerationTool: Tool = {
     seed: z.number().optional().describe("Random seed for reproducible results"),
     steps: z.number().optional().describe("Number of diffusion steps (Stable Diffusion)"),
     guidance: z.number().optional().describe("Guidance scale for prompt adherence (Stable Diffusion)"),
-    outputFormat: z.enum(["png", "jpg", "webp"]).optional().describe("Output image format")
+    outputFormat: z.enum(["png", "jpg", "webp"]).optional().describe("Output image format"),
+    aspectRatio: z.enum(["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"]).optional().describe("Aspect ratio for OpenRouter models")
   }),
 
   async execute(args: any): Promise<ToolResult> {
