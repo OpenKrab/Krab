@@ -7,13 +7,21 @@ import { loadConfig, saveConfig } from "../core/krab-config.js";
 import { GatewayServer } from "../gateway/server.js";
 import { MCPServer, createMCPServer } from "../mcp/server.js";
 import { MCPClient, createMCPClient } from "../mcp/client.js";
-import { CronScheduler, createScheduler, jobTemplates } from "../scheduler/cron.js";
+import {
+  CronScheduler,
+  createScheduler,
+  jobTemplates,
+} from "../scheduler/cron.js";
 
 // ── Gateway Commands ────────────────────────────────────────
 const gatewayCmd = new Command("gateway")
   .description("Gateway server management (OpenClaw-inspired)")
   .option("-p, --port <port>", "Port to listen on", "18789")
-  .option("-b, --bind <bind>", "Bind address (loopback|lan|tailnet|custom)", "loopback")
+  .option(
+    "-b, --bind <bind>",
+    "Bind address (loopback|lan|tailnet|custom)",
+    "loopback",
+  )
   .option("--verbose", "Enable verbose logging")
   .option("--force", "Force kill existing listener")
   .action(async (options) => {
@@ -59,7 +67,7 @@ gatewayCmd
   .description("Diagnose Gateway issues")
   .option("--fix", "Apply automatic fixes")
   .action(async (options) => {
-    await showGatewayLogs(options);
+    await runGatewayDoctor(options);
   });
 
 // ── Configuration Commands ────────────────────────────────
@@ -85,7 +93,7 @@ const channelsCmd = new Command("channels")
 async function startGateway(options: any): Promise<void> {
   try {
     console.log(pc.cyan("🚀 Starting Krab Gateway..."));
-    
+
     const config = loadConfig();
     const gatewayConfig = {
       port: parseInt(options.port),
@@ -97,24 +105,31 @@ async function startGateway(options: any): Promise<void> {
           maxAttempts: 10,
           windowMs: 60000,
           lockoutMs: 300000,
-          exemptLoopback: true
-        }
+          exemptLoopback: true,
+        },
       },
       http: config.gateway?.http || {
         endpoints: {
           chatCompletions: { enabled: true },
-          responses: { enabled: true }
-        }
-      }
+          responses: { enabled: true },
+        },
+      },
     };
 
-    const server = new GatewayServer(gatewayConfig, config.agents?.defaults?.workspace || "~/.krab/workspace");
+    const server = new GatewayServer(
+      gatewayConfig,
+      config.agents?.defaults?.workspace || "~/.krab/workspace",
+    );
     await server.start();
 
-    console.log(pc.green(`✅ Gateway running on ${options.bind}:${options.port}`));
+    console.log(
+      pc.green(`✅ Gateway running on ${options.bind}:${options.port}`),
+    );
     console.log(pc.dim(`   WebSocket: ws://${options.bind}:${options.port}`));
     console.log(pc.dim(`   HTTP API: http://${options.bind}:${options.port}`));
-    console.log(pc.dim(`   Control UI: http://${options.bind}:${options.port}/krab`));
+    console.log(
+      pc.dim(`   Control UI: http://${options.bind}:${options.port}/krab`),
+    );
 
     // Handle graceful shutdown
     process.on("SIGINT", async () => {
@@ -128,7 +143,6 @@ async function startGateway(options: any): Promise<void> {
       await server.stop();
       process.exit(0);
     });
-
   } catch (error) {
     console.error(pc.red("❌ Failed to start Gateway:"), error);
     process.exit(1);
@@ -139,24 +153,25 @@ async function checkGatewayStatus(): Promise<void> {
   try {
     const config = loadConfig();
     const port = config.gateway?.port || 18789;
-    
+
     console.log(pc.cyan("📊 Gateway Status:"));
     console.log(`   Port: ${port}`);
     console.log(`   Bind: ${config.gateway?.bind || "loopback"}`);
     console.log(`   Auth: ${config.gateway?.auth?.mode || "none"}`);
-    console.log(`   Workspace: ${config.agents?.defaults?.workspace || "~/.krab/workspace"}`);
-    
+    console.log(
+      `   Workspace: ${config.agents?.defaults?.workspace || "~/.krab/workspace"}`,
+    );
+
     // Try to connect to check if running
     const response = await fetch(`http://127.0.0.1:${port}/health`)
-      .then(res => res.ok)
+      .then((res) => res.ok)
       .catch(() => false);
-    
+
     if (response) {
       console.log(pc.green("   Status: ✅ Running"));
     } else {
       console.log(pc.red("   Status: ❌ Not running"));
     }
-    
   } catch (error) {
     console.error(pc.red("❌ Status check failed:"), error);
   }
@@ -166,31 +181,30 @@ async function checkGatewayHealth(): Promise<void> {
   try {
     const config = loadConfig();
     const port = config.gateway?.port || 18789;
-    
+
     console.log(pc.cyan("🏥 Gateway Health Check:"));
-    
+
     // Liveness check
     const livenessResponse = await fetch(`http://127.0.0.1:${port}/health`)
-      .then(res => res.ok)
+      .then((res) => res.ok)
       .catch(() => false);
-    
+
     if (livenessResponse) {
       console.log(pc.green("   ✅ Liveness: OK"));
     } else {
       console.log(pc.red("   ❌ Liveness: Failed"));
     }
-    
+
     // Readiness check
     const readinessResponse = await fetch(`http://127.0.0.1:${port}/ready`)
-      .then(res => res.ok)
+      .then((res) => res.ok)
       .catch(() => false);
-    
+
     if (readinessResponse) {
       console.log(pc.green("   ✅ Readiness: OK"));
     } else {
       console.log(pc.yellow("   ⚠️  Readiness: Not ready"));
     }
-    
   } catch (error) {
     console.error(pc.red("❌ Health check failed:"), error);
   }
@@ -204,27 +218,27 @@ async function showGatewayLogs(options: any): Promise<void> {
 
 async function runGatewayDoctor(options: any): Promise<void> {
   console.log(pc.cyan("🩺 Gateway Doctor:"));
-  
+
   const issues: string[] = [];
   const fixes: string[] = [];
-  
+
   // Check workspace
   const config = loadConfig();
   const workspace = config.agents?.defaults?.workspace;
-  
+
   if (!workspace) {
     issues.push("No workspace configured");
     fixes.push("Run 'npm run dev -- wizard' to setup workspace");
   } else {
     console.log(pc.green(`   ✅ Workspace: ${workspace}`));
   }
-  
+
   // Check port availability
   const port = config.gateway?.port || 18789;
   // TODO: Add actual port check
-  
+
   console.log(pc.green(`   ✅ Port: ${port}`));
-  
+
   // Check auth configuration
   const authMode = config.gateway?.auth?.mode;
   if (authMode === "none" && config.gateway?.bind !== "loopback") {
@@ -233,14 +247,14 @@ async function runGatewayDoctor(options: any): Promise<void> {
   } else {
     console.log(pc.green(`   ✅ Auth: ${authMode}`));
   }
-  
+
   if (issues.length > 0) {
     console.log(pc.red("\n❌ Issues found:"));
-    issues.forEach(issue => console.log(`   - ${issue}`));
-    
+    issues.forEach((issue) => console.log(`   - ${issue}`));
+
     if (options.fix) {
       console.log(pc.yellow("\n🔧 Applying fixes:"));
-      fixes.forEach(fix => console.log(`   - ${fix}`));
+      fixes.forEach((fix) => console.log(`   - ${fix}`));
     } else {
       console.log(pc.yellow("\n💡 Run with --fix to apply automatic fixes"));
     }
@@ -251,46 +265,46 @@ async function runGatewayDoctor(options: any): Promise<void> {
 
 async function manageConfig(key?: string, value?: string): Promise<void> {
   const config = loadConfig();
-  
+
   if (!key) {
     // Show all config
     console.log(pc.cyan("⚙️  Current Configuration:"));
     console.log(JSON.stringify(config, null, 2));
     return;
   }
-  
+
   if (!value) {
     // Get specific config value
     const keys = key.split(".");
     let current: any = config;
-    
+
     for (const k of keys) {
       current = current?.[k];
     }
-    
+
     console.log(pc.cyan(`⚙️  ${key}:`));
     console.log(JSON.stringify(current, null, 2));
     return;
   }
-  
+
   // Set config value
   const keys = key.split(".");
   let target: any = config;
-  
+
   for (let i = 0; i < keys.length - 1; i++) {
     if (!target[keys[i]]) {
       target[keys[i]] = {};
     }
     target = target[keys[i]];
   }
-  
+
   // Try to parse as JSON, fallback to string
   try {
     target[keys[keys.length - 1]] = JSON.parse(value);
   } catch {
     target[keys[keys.length - 1]] = value;
   }
-  
+
   saveConfig({ [key]: target[keys[keys.length - 1]] });
   console.log(pc.green(`✅ Set ${key} = ${value}`));
 }
@@ -320,7 +334,7 @@ async function startMCPServer(options: any): Promise<void> {
     const serverOptions = {
       port: parseInt(options.port),
       websocket: options.websocket && !options.http,
-      allowedOrigins: ['*'] // TODO: Make configurable
+      allowedOrigins: ["*"], // TODO: Make configurable
     };
 
     mcpServerInstance = createMCPServer(serverOptions);
@@ -338,7 +352,6 @@ async function startMCPServer(options: any): Promise<void> {
       }
       process.exit(0);
     });
-
   } catch (error) {
     console.error(pc.red("❌ Failed to start MCP Server:"), error);
     process.exit(1);
@@ -356,7 +369,6 @@ async function stopMCPServer(): Promise<void> {
     await mcpServerInstance!.stop();
     mcpServerInstance = null;
     console.log(pc.green("✅ MCP Server stopped"));
-
   } catch (error) {
     console.error(pc.red("❌ Failed to stop MCP Server:"), error);
   }
@@ -371,8 +383,10 @@ async function checkMCPServerStatus(): Promise<void> {
   }
 
   console.log(pc.green("   Status: ✅ Running"));
-  console.log(`   Port: ${mcpServerInstance ? 'Unknown' : '3001'}`); // TODO: Add port getter
-  console.log(`   Connections: ${mcpServerInstance?.getConnectionCount() || 0}`);
+  console.log(`   Port: ${mcpServerInstance ? "Unknown" : "3001"}`); // TODO: Add port getter
+  console.log(
+    `   Connections: ${mcpServerInstance?.getConnectionCount() || 0}`,
+  );
 }
 
 async function handleMCPClient(action: string, options: any): Promise<void> {
@@ -388,11 +402,13 @@ async function handleMCPClient(action: string, options: any): Promise<void> {
 
         let clientOptions: any = {};
         if (options.command) {
-          clientOptions.command = options.command.split(' ');
+          clientOptions.command = options.command.split(" ");
         } else if (options.websocket) {
           clientOptions.websocketUrl = options.websocket;
         } else {
-          console.error(pc.red("❌ Must specify either --command or --websocket"));
+          console.error(
+            pc.red("❌ Must specify either --command or --websocket"),
+          );
           return;
         }
 
@@ -427,7 +443,7 @@ async function handleMCPClient(action: string, options: any): Promise<void> {
           return;
         }
 
-        tools.forEach(tool => {
+        tools.forEach((tool) => {
           console.log(`   • ${pc.bold(tool.name)}: ${tool.description}`);
         });
         break;
@@ -456,17 +472,21 @@ async function handleMCPClient(action: string, options: any): Promise<void> {
 
       default:
         console.log(pc.red(`❌ Unknown action: ${action}`));
-        console.log(pc.dim("Available actions: connect, disconnect, list-tools, call-tool"));
+        console.log(
+          pc.dim(
+            "Available actions: connect, disconnect, list-tools, call-tool",
+          ),
+        );
     }
-
   } catch (error) {
     console.error(pc.red(`❌ MCP Client error:`), error);
   }
 }
 
 // ── MCP Commands ───────────────────────────────────────────
-const mcpCmd = new Command("mcp")
-  .description("MCP (Model Context Protocol) management");
+const mcpCmd = new Command("mcp").description(
+  "MCP (Model Context Protocol) management",
+);
 
 // MCP Server commands
 mcpCmd
@@ -576,12 +596,16 @@ async function listJobSchedulerJobs(): Promise<void> {
 
   for (const job of jobs) {
     const status = job.enabled ? pc.green("✅") : pc.red("❌");
-    const running = scheduler.getRunningJobs().includes(job.id) ? pc.yellow("🔄") : "";
+    const running = scheduler.getRunningJobs().includes(job.id)
+      ? pc.yellow("🔄")
+      : "";
     const nextRun = job.nextRun ? job.nextRun.toLocaleString() : "Unknown";
 
     console.log(`${status} ${running} ${pc.bold(job.name)} (${job.id})`);
     console.log(`   Schedule: ${job.schedule}`);
-    console.log(`   Command: ${job.command}${job.args ? ` ${job.args.join(' ')}` : ''}`);
+    console.log(
+      `   Command: ${job.command}${job.args ? ` ${job.args.join(" ")}` : ""}`,
+    );
     console.log(`   Next run: ${nextRun}`);
     if (job.description) {
       console.log(`   Description: ${job.description}`);
@@ -601,7 +625,7 @@ async function addJobSchedulerJob(options: any): Promise<void> {
     if (!template) {
       console.log(pc.red(`❌ Template '${options.template}' not found.`));
       console.log(pc.dim("Available templates:"));
-      Object.keys(jobTemplates).forEach(template => {
+      Object.keys(jobTemplates).forEach((template) => {
         console.log(`  - ${template}`);
       });
       return;
@@ -613,7 +637,7 @@ async function addJobSchedulerJob(options: any): Promise<void> {
   if (options.name) jobData.name = options.name;
   if (options.schedule) jobData.schedule = options.schedule;
   if (options.command) jobData.command = options.command;
-  if (options.args) jobData.args = options.args.split(',');
+  if (options.args) jobData.args = options.args.split(",");
   if (options.description) jobData.description = options.description;
 
   // Validate required fields
@@ -703,8 +727,9 @@ async function showJobSchedulerStatus(): Promise<void> {
 }
 
 // ── Job Commands ───────────────────────────────────────
-const jobCmd = new Command("job")
-  .description("Job scheduler for recurring tasks");
+const jobCmd = new Command("job").description(
+  "Job scheduler for recurring tasks",
+);
 
 // List jobs
 jobCmd
@@ -720,7 +745,10 @@ jobCmd
   .command("add")
   .description("Add a new scheduled job")
   .requiredOption("-n, --name <name>", "Job name")
-  .requiredOption("-s, --schedule <cron>", "Cron schedule expression (e.g., '*/5 * * * *')")
+  .requiredOption(
+    "-s, --schedule <cron>",
+    "Cron schedule expression (e.g., '*/5 * * * *')",
+  )
   .requiredOption("-c, --command <cmd>", "Command to execute")
   .option("-a, --args <args>", "Command arguments (comma-separated)")
   .option("-d, --description <desc>", "Job description")
@@ -786,7 +814,9 @@ jobCmd
     Object.entries(jobTemplates).forEach(([key, template]: [string, any]) => {
       console.log(`${pc.bold(key)}: ${template.description}`);
       console.log(`   Schedule: ${template.schedule}`);
-      console.log(`   Command: ${template.command}${template.args ? ` ${template.args.join(' ')}` : ''}`);
+      console.log(
+        `   Command: ${template.command}${template.args ? ` ${template.args.join(" ")}` : ""}`,
+      );
       console.log("");
     });
   });

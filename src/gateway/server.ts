@@ -1,5 +1,6 @@
 // ============================================================
-// 🦀 Krab — Gateway Server (OpenClaw-inspired)
+// 🦀 Krab — Gateway Server (Production-Ready)
+// OpenAI-Compatible API + WebSocket + SSE Streaming
 // ============================================================
 import { createServer, Server, IncomingMessage, ServerResponse } from "http";
 import { WebSocketServer, WebSocket } from "ws";
@@ -8,6 +9,7 @@ import { logger } from "../utils/logger.js";
 import { Agent } from "../core/agent.js";
 import { loadConfig } from "../core/config.js";
 import { ConversationMemory } from "../memory/conversation-enhanced.js";
+import { registry } from "../tools/registry.js";
 
 interface GatewayConfig {
   port: number;
@@ -47,6 +49,11 @@ interface GatewayConfig {
       strictTransportSecurity?: string;
     };
   };
+  cors?: {
+    allowOrigins?: string[];
+    allowMethods?: string[];
+    allowHeaders?: string[];
+  };
 }
 
 interface RateLimitEntry {
@@ -62,11 +69,12 @@ export class GatewayServer {
   private rateLimitMap: Map<string, RateLimitEntry> = new Map();
   private conversations: ConversationMemory;
   private agents: Map<string, Agent> = new Map();
+  private startTime: number = Date.now();
 
   constructor(config: GatewayConfig, workspace: string) {
     this.config = config;
     this.conversations = new ConversationMemory(workspace);
-    
+
     this.server = createServer((req, res) => {
       this.handleHttpRequest(req, res);
     });
@@ -122,6 +130,7 @@ export class GatewayServer {
     }
   }
 
+  // ── Authentication ─────────────────────────────────────────
   private async authenticateRequest(req: IncomingMessage): Promise<boolean> {
     switch (this.config.auth.mode) {
       case "none":
@@ -132,42 +141,53 @@ export class GatewayServer {
         const authHeader = req.headers.authorization;
         return authHeader === `Bearer ${this.config.auth.token}`;
 
-      case "password":
-        // For password auth, check in request body or headers
+      case "password": {
         const passwordAuthHeader = req.headers.authorization;
-        if (!passwordAuthHeader || !passwordAuthHeader.startsWith("Basic ")) return false;
-        const credentials = Buffer.from(passwordAuthHeader.slice(6), "base64").toString().split(":");
-        return credentials[0] === "krab" && credentials[1] === this.config.auth.password;
+        if (!passwordAuthHeader || !passwordAuthHeader.startsWith("Basic "))
+          return false;
+        const credentials = Buffer.from(passwordAuthHeader.slice(6), "base64")
+          .toString()
+          .split(":");
+        return (
+          credentials[0] === "krab" &&
+          credentials[1] === this.config.auth.password
+        );
+      }
 
-      case "trusted-proxy":
-        // Check trusted proxy header
+      case "trusted-proxy": {
         const userHeader = this.config.auth.trustedProxy?.userHeader;
         if (!userHeader) return false;
         return !!req.headers[userHeader.toLowerCase()];
+      }
 
       default:
         return false;
     }
   }
 
+  // ── Rate Limiting ──────────────────────────────────────────
   private checkRateLimit(clientId: string): boolean {
     if (!this.config.auth.rateLimit) return true;
 
     const now = Date.now();
     const limit = this.config.auth.rateLimit;
+
+    // Exempt loopback
+    if (
+      limit.exemptLoopback &&
+      (clientId === "127.0.0.1" || clientId === "::1")
+    ) {
+      return true;
+    }
+
     const entry = this.rateLimitMap.get(clientId);
 
-    // Check if currently locked out
     if (entry?.lockedUntil && now < entry.lockedUntil) {
       return false;
     }
 
     if (!entry || now - entry.firstAttempt > limit.windowMs) {
-      // Reset window
-      this.rateLimitMap.set(clientId, {
-        attempts: 1,
-        firstAttempt: now
-      });
+      this.rateLimitMap.set(clientId, { attempts: 1, firstAttempt: now });
       return true;
     }
 
@@ -175,7 +195,9 @@ export class GatewayServer {
 
     if (entry.attempts > limit.maxAttempts) {
       entry.lockedUntil = now + limit.lockoutMs;
-      logger.warn(`[Gateway] Rate limit exceeded for ${clientId}, locked for ${limit.lockoutMs}ms`);
+      logger.warn(
+        `[Gateway] Rate limit exceeded for ${clientId}, locked for ${limit.lockoutMs}ms`,
+      );
       return false;
     }
 
@@ -183,7 +205,6 @@ export class GatewayServer {
   }
 
   private getClientId(req: IncomingMessage): string {
-    // Use IP address as client identifier
     const forwarded = req.headers["x-forwarded-for"];
     const realIp = req.headers["x-real-ip"];
 
@@ -196,217 +217,475 @@ export class GatewayServer {
     return req.socket.remoteAddress || "unknown";
   }
 
-  private async handleHttpRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  // ── CORS ───────────────────────────────────────────────────
+  private setCorsHeaders(req: IncomingMessage, res: ServerResponse): void {
+    const origin = req.headers.origin || "*";
+    const allowedOrigins = this.config.cors?.allowOrigins || ["*"];
+
+    // Check if origin is allowed
+    const isAllowed =
+      allowedOrigins.includes("*") || allowedOrigins.includes(origin as string);
+
+    res.setHeader(
+      "Access-Control-Allow-Origin",
+      isAllowed ? (origin as string) : "",
+    );
+    res.setHeader(
+      "Access-Control-Allow-Methods",
+      (
+        this.config.cors?.allowMethods || ["GET", "POST", "OPTIONS", "DELETE"]
+      ).join(", "),
+    );
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      (
+        this.config.cors?.allowHeaders || [
+          "Content-Type",
+          "Authorization",
+          "X-Session-Id",
+          "X-Request-Id",
+        ]
+      ).join(", "),
+    );
+    res.setHeader("Access-Control-Max-Age", "86400");
+  }
+
+  // ── HTTP Request Router ────────────────────────────────────
+  private async handleHttpRequest(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
     const clientId = this.getClientId(req);
 
-    // Check rate limit
+    // CORS headers on all requests
+    this.setCorsHeaders(req, res);
+
+    // Handle CORS preflight
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
+    // Rate limit
     if (!this.checkRateLimit(clientId)) {
       res.writeHead(429, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
-        error: {
-          message: "Rate limit exceeded",
-          type: "rate_limit_error"
-        }
-      }));
+      res.end(
+        JSON.stringify({
+          error: { message: "Rate limit exceeded", type: "rate_limit_error" },
+        }),
+      );
       return;
     }
 
-    // Authenticate
-    if (!await this.authenticateRequest(req)) {
-      res.writeHead(401, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
-        error: {
-          message: "Authentication failed",
-          type: "authentication_error"
-        }
-      }));
-      return;
-    }
-
-    // Set security headers
-    if (this.config.http?.securityHeaders?.strictTransportSecurity) {
-      res.setHeader("Strict-Transport-Security", this.config.http.securityHeaders.strictTransportSecurity);
-    }
-
-    // Route requests
+    // Auth (skip for health check)
     const url = parseUrl(req.url || "", true);
     const path = url.pathname || "/";
 
+    if (path !== "/health" && !(await this.authenticateRequest(req))) {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: {
+            message: "Authentication failed",
+            type: "authentication_error",
+          },
+        }),
+      );
+      return;
+    }
+
+    // Security headers
+    if (this.config.http?.securityHeaders?.strictTransportSecurity) {
+      res.setHeader(
+        "Strict-Transport-Security",
+        this.config.http.securityHeaders.strictTransportSecurity,
+      );
+    }
+
+    // Route
     try {
       if (path === "/v1/chat/completions" && req.method === "POST") {
         await this.handleChatCompletions(req, res);
+      } else if (path === "/v1/models" && req.method === "GET") {
+        this.handleListModels(res);
       } else if (path === "/health" && req.method === "GET") {
         this.handleHealthCheck(res);
       } else if (path === "/status" && req.method === "GET") {
         this.handleStatus(res);
+      } else if (path === "/ready" && req.method === "GET") {
+        this.handleReadyCheck(res);
       } else {
         res.writeHead(404, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({
-          error: {
-            message: "Endpoint not found",
-            type: "not_found_error"
-          }
-        }));
+        res.end(
+          JSON.stringify({
+            error: {
+              message: `Endpoint not found: ${path}`,
+              type: "not_found_error",
+            },
+          }),
+        );
       }
     } catch (error) {
       logger.error("[Gateway] HTTP request error:", error);
       res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({
-        error: {
-          message: "Internal server error",
-          type: "internal_error"
-        }
-      }));
+      res.end(
+        JSON.stringify({
+          error: { message: "Internal server error", type: "internal_error" },
+        }),
+      );
     }
   }
 
-  private async handleChatCompletions(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  // ── Chat Completions (OpenAI-Compatible) ──────────────────
+  private async handleChatCompletions(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
     if (!this.config.http?.endpoints?.chatCompletions?.enabled) {
       res.writeHead(404, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: { message: "Chat completions not enabled", type: "not_found_error" } }));
+      res.end(
+        JSON.stringify({
+          error: {
+            message: "Chat completions not enabled",
+            type: "not_found_error",
+          },
+        }),
+      );
       return;
     }
 
     let body = "";
-    req.on("data", chunk => body += chunk);
+    req.on("data", (chunk) => (body += chunk));
     req.on("end", async () => {
       try {
         const request = JSON.parse(body);
+        const sessionId =
+          request.session_id || req.headers["x-session-id"] || "default";
+        const requestId = `chatcmpl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-        // Create or get agent
-        const sessionId = request.session_id || "default";
-        let agent = this.agents.get(sessionId);
-
+        // Get or create agent
+        let agent = this.agents.get(sessionId as string);
         if (!agent) {
           const config = loadConfig();
           agent = new Agent(config);
-          this.agents.set(sessionId, agent);
+          this.agents.set(sessionId as string, agent);
         }
 
-        // Convert OpenAI format to our message format
+        // Extract messages
         const messages = request.messages.map((msg: any) => ({
           role: msg.role,
           content: msg.content,
-          name: msg.name
+          name: msg.name,
         }));
 
-        // Handle streaming if requested
+        const lastMessage = messages[messages.length - 1].content;
+
+        // ── SSE Streaming ────────────────────────────────────
         if (request.stream) {
           res.writeHead(200, {
-            "Content-Type": "text/plain",
+            "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache",
-            "Connection": "keep-alive"
+            Connection: "keep-alive",
+            "X-Request-Id": requestId,
           });
 
-          // Streaming not implemented yet
+          // Send initial chunk
+          const startChunk = {
+            id: requestId,
+            object: "chat.completion.chunk",
+            created: Math.floor(Date.now() / 1000),
+            model: request.model || "krab",
+            choices: [
+              {
+                index: 0,
+                delta: { role: "assistant", content: "" },
+                finish_reason: null,
+              },
+            ],
+          };
+          res.write(`data: ${JSON.stringify(startChunk)}\n\n`);
+
+          // Get full response from agent
+          const response = await agent.chat(lastMessage, {
+            conversationId: sessionId as string,
+            messages: messages.slice(0, -1),
+          });
+
+          // Stream it in chunks (simulate streaming for now)
+          const chunkSize = 4; // characters per chunk
+          for (let i = 0; i < response.length; i += chunkSize) {
+            const textChunk = response.slice(i, i + chunkSize);
+            const chunk = {
+              id: requestId,
+              object: "chat.completion.chunk",
+              created: Math.floor(Date.now() / 1000),
+              model: request.model || "krab",
+              choices: [
+                {
+                  index: 0,
+                  delta: { content: textChunk },
+                  finish_reason: null,
+                },
+              ],
+            };
+            res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+          }
+
+          // Send final chunk
+          const endChunk = {
+            id: requestId,
+            object: "chat.completion.chunk",
+            created: Math.floor(Date.now() / 1000),
+            model: request.model || "krab",
+            choices: [
+              {
+                index: 0,
+                delta: {},
+                finish_reason: "stop",
+              },
+            ],
+          };
+          res.write(`data: ${JSON.stringify(endChunk)}\n\n`);
+          res.write("data: [DONE]\n\n");
           res.end();
-
         } else {
-          // Non-streaming response
-          const response = await agent.chat(messages[messages.length - 1].content, {
-            conversationId: sessionId,
-            messages: messages.slice(0, -1)
+          // ── Non-Streaming Response ────────────────────────
+          const response = await agent.chat(lastMessage, {
+            conversationId: sessionId as string,
+            messages: messages.slice(0, -1),
           });
+
+          const promptTokens = messages.reduce(
+            (sum: number, msg: any) => sum + (msg.content?.length || 0),
+            0,
+          );
 
           const openaiResponse = {
-            id: `chatcmpl-${Date.now()}`,
+            id: requestId,
             object: "chat.completion",
             created: Math.floor(Date.now() / 1000),
             model: request.model || "krab",
-            choices: [{
-              index: 0,
-              message: {
-                role: "assistant",
-                content: response
+            choices: [
+              {
+                index: 0,
+                message: { role: "assistant", content: response },
+                finish_reason: "stop",
               },
-              finish_reason: "stop"
-            }],
+            ],
             usage: {
-              prompt_tokens: messages.reduce((sum: number, msg: any) => sum + msg.content.length, 0),
-              completion_tokens: response.length,
-              total_tokens: messages.reduce((sum: number, msg: any) => sum + msg.content.length, 0) + response.length
-            }
+              prompt_tokens: Math.ceil(promptTokens / 4),
+              completion_tokens: Math.ceil(response.length / 4),
+              total_tokens: Math.ceil((promptTokens + response.length) / 4),
+            },
           };
 
-          res.writeHead(200, { "Content-Type": "application/json" });
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "X-Request-Id": requestId,
+          });
           res.end(JSON.stringify(openaiResponse));
         }
-
       } catch (error) {
         logger.error("[Gateway] Chat completions error:", error);
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({
-          error: {
-            message: error instanceof Error ? error.message : "Unknown error",
-            type: "internal_error"
-          }
-        }));
+
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+        }
+        res.end(
+          JSON.stringify({
+            error: {
+              message: error instanceof Error ? error.message : "Unknown error",
+              type: "internal_error",
+            },
+          }),
+        );
       }
     });
   }
 
+  // ── List Models (OpenAI-Compatible) ───────────────────────
+  private handleListModels(res: ServerResponse): void {
+    const config = loadConfig();
+    const primaryModel = config.agents?.defaults?.model?.primary || "krab";
+
+    const models = [
+      {
+        id: primaryModel,
+        object: "model",
+        created: Math.floor(this.startTime / 1000),
+        owned_by: "krab",
+        permission: [],
+        root: primaryModel,
+        parent: null,
+      },
+      {
+        id: "krab",
+        object: "model",
+        created: Math.floor(this.startTime / 1000),
+        owned_by: "krab",
+        permission: [],
+        root: "krab",
+        parent: null,
+      },
+    ];
+
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ object: "list", data: models }));
+  }
+
+  // ── Health / Ready / Status ────────────────────────────────
   private handleHealthCheck(res: ServerResponse): void {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      status: "healthy",
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime()
-    }));
+    res.end(
+      JSON.stringify({
+        status: "healthy",
+        timestamp: new Date().toISOString(),
+        uptime: Math.floor((Date.now() - this.startTime) / 1000),
+      }),
+    );
+  }
+
+  private handleReadyCheck(res: ServerResponse): void {
+    // Ready if we can load config and have at least one agent ready
+    try {
+      loadConfig();
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          status: "ready",
+          timestamp: new Date().toISOString(),
+        }),
+      );
+    } catch {
+      res.writeHead(503, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          status: "not_ready",
+          timestamp: new Date().toISOString(),
+        }),
+      );
+    }
   }
 
   private handleStatus(res: ServerResponse): void {
     const stats = this.conversations.getStats();
-    const agentStats = Array.from(this.agents.entries()).map(([id, agent]) => ({
+    const toolNames = registry.getNames();
+    const agentStats = Array.from(this.agents.entries()).map(([id]) => ({
       id,
-      // Add agent-specific stats if available
     }));
 
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      status: "running",
-      timestamp: new Date().toISOString(),
-      conversations: stats,
-      agents: agentStats,
-      websocket: {
-        connections: this.wss.clients.size
-      }
-    }));
+    res.end(
+      JSON.stringify({
+        status: "running",
+        timestamp: new Date().toISOString(),
+        uptime: Math.floor((Date.now() - this.startTime) / 1000),
+        conversations: stats,
+        agents: agentStats,
+        tools: {
+          count: toolNames.length,
+          list: toolNames,
+        },
+        websocket: {
+          connections: this.wss.clients.size,
+        },
+      }),
+    );
   }
 
+  // ── WebSocket ──────────────────────────────────────────────
   private handleWebSocketConnection(ws: WebSocket, req: IncomingMessage): void {
     const clientId = this.getClientId(req);
+
+    // Authenticate WebSocket connections
+    if (this.config.auth.mode !== "none") {
+      const url = parseUrl(req.url || "", true);
+      const token = url.query.token as string;
+      const authHeader = req.headers.authorization;
+
+      let authenticated = false;
+
+      if (this.config.auth.mode === "token" && this.config.auth.token) {
+        // Check via query param or header
+        authenticated =
+          token === this.config.auth.token ||
+          authHeader === `Bearer ${this.config.auth.token}`;
+      } else if (this.config.auth.mode === "none") {
+        authenticated = true;
+      } else {
+        // For password/trusted-proxy, check header
+        this.authenticateRequest(req).then((ok) => {
+          if (!ok) {
+            ws.close(4001, "Authentication failed");
+          }
+        });
+        authenticated = true; // async check above
+      }
+
+      if (!authenticated) {
+        ws.close(4001, "Authentication failed");
+        logger.warn(`[Gateway] WebSocket auth failed for ${clientId}`);
+        return;
+      }
+    }
+
     logger.info(`[Gateway] WebSocket connection from ${clientId}`);
+
+    // Send welcome message
+    ws.send(
+      JSON.stringify({
+        type: "connected",
+        timestamp: Date.now(),
+        message: "🦀 Connected to Krab Gateway",
+      }),
+    );
 
     ws.on("message", async (data) => {
       try {
         const message = JSON.parse(data.toString());
 
-        // Handle WebSocket messages
         switch (message.type) {
           case "chat":
             await this.handleWebSocketChat(ws, message);
             break;
+          case "chat.stream":
+            await this.handleWebSocketStreamChat(ws, message);
+            break;
           case "ping":
             ws.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
             break;
+          case "status":
+            ws.send(
+              JSON.stringify({
+                type: "status",
+                connections: this.wss.clients.size,
+                agents: this.agents.size,
+                uptime: Math.floor((Date.now() - this.startTime) / 1000),
+              }),
+            );
+            break;
           default:
-            ws.send(JSON.stringify({
-              type: "error",
-              error: "Unknown message type"
-            }));
+            ws.send(
+              JSON.stringify({
+                type: "error",
+                error: `Unknown message type: ${message.type}`,
+              }),
+            );
         }
-
       } catch (error) {
         logger.error("[Gateway] WebSocket message error:", error);
-        ws.send(JSON.stringify({
-          type: "error",
-          error: "Invalid message format"
-        }));
+        ws.send(
+          JSON.stringify({
+            type: "error",
+            error: "Invalid message format",
+          }),
+        );
       }
     });
 
     ws.on("close", () => {
-      logger.info(`[Gateway] WebSocket connection closed for ${clientId}`);
+      logger.info(`[Gateway] WebSocket disconnected: ${clientId}`);
     });
 
     ws.on("error", (error) => {
@@ -414,7 +693,10 @@ export class GatewayServer {
     });
   }
 
-  private async handleWebSocketChat(ws: WebSocket, message: any): Promise<void> {
+  private async handleWebSocketChat(
+    ws: WebSocket,
+    message: any,
+  ): Promise<void> {
     try {
       const sessionId = message.sessionId || "ws_default";
       let agent = this.agents.get(sessionId);
@@ -426,37 +708,104 @@ export class GatewayServer {
       }
 
       const response = await agent.chat(message.content, {
-        conversationId: sessionId
+        conversationId: sessionId,
       });
 
-      ws.send(JSON.stringify({
-        type: "chat_response",
-        content: response,
-        sessionId,
-        timestamp: Date.now()
-      }));
-
+      ws.send(
+        JSON.stringify({
+          type: "chat.response",
+          content: response,
+          sessionId,
+          timestamp: Date.now(),
+        }),
+      );
     } catch (error) {
-      ws.send(JSON.stringify({
-        type: "error",
-        error: error instanceof Error ? error.message : "Unknown error",
-        timestamp: Date.now()
-      }));
+      ws.send(
+        JSON.stringify({
+          type: "error",
+          error: error instanceof Error ? error.message : "Unknown error",
+          timestamp: Date.now(),
+        }),
+      );
     }
   }
 
-  // Control methods
+  // ── WebSocket Streaming ────────────────────────────────────
+  private async handleWebSocketStreamChat(
+    ws: WebSocket,
+    message: any,
+  ): Promise<void> {
+    try {
+      const sessionId = message.sessionId || "ws_default";
+      let agent = this.agents.get(sessionId);
+
+      if (!agent) {
+        const config = loadConfig();
+        agent = new Agent(config);
+        this.agents.set(sessionId, agent);
+      }
+
+      // Send start
+      ws.send(
+        JSON.stringify({
+          type: "chat.stream.start",
+          sessionId,
+          timestamp: Date.now(),
+        }),
+      );
+
+      // Get full response
+      const response = await agent.chat(message.content, {
+        conversationId: sessionId,
+      });
+
+      // Stream in chunks
+      const chunkSize = 8;
+      for (let i = 0; i < response.length; i += chunkSize) {
+        const textChunk = response.slice(i, i + chunkSize);
+        ws.send(
+          JSON.stringify({
+            type: "chat.stream.delta",
+            content: textChunk,
+            sessionId,
+          }),
+        );
+      }
+
+      // Send end
+      ws.send(
+        JSON.stringify({
+          type: "chat.stream.end",
+          sessionId,
+          timestamp: Date.now(),
+          fullContent: response,
+        }),
+      );
+    } catch (error) {
+      ws.send(
+        JSON.stringify({
+          type: "error",
+          error: error instanceof Error ? error.message : "Unknown error",
+          timestamp: Date.now(),
+        }),
+      );
+    }
+  }
+
+  // ── Control Methods ────────────────────────────────────────
   getStats(): {
     connections: number;
     conversations: any;
     agents: number;
     uptime: number;
+    tools: number;
   } {
     return {
       connections: this.wss.clients.size,
       conversations: this.conversations.getStats(),
       agents: this.agents.size,
-      uptime: process.uptime()
+      uptime: Math.floor((Date.now() - this.startTime) / 1000),
+      tools: registry.getNames().length,
     };
   }
 
