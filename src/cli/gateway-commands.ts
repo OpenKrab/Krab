@@ -3,6 +3,16 @@
 // ============================================================
 import { Command } from "commander";
 import pc from "picocolors";
+import { join, resolve } from "path";
+import { homedir } from "os";
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  unlinkSync,
+} from "fs";
+import { execSync } from "child_process";
 import { loadConfig, saveConfig } from "../core/krab-config.js";
 import { GatewayServer } from "../gateway/server.js";
 import { MCPServer, createMCPServer } from "../mcp/server.js";
@@ -43,8 +53,10 @@ gatewayCmd
 gatewayCmd
   .command("status")
   .description("Check Gateway status")
-  .action(async () => {
-    await checkGatewayStatus();
+  .option("--deep", "Deep status with health and readiness probes")
+  .option("--json", "Output as JSON")
+  .action(async (options) => {
+    await checkGatewayStatus(options);
   });
 
 gatewayCmd
@@ -52,6 +64,31 @@ gatewayCmd
   .description("Check Gateway health")
   .action(async () => {
     await checkGatewayHealth();
+  });
+
+gatewayCmd
+  .command("stop")
+  .description("Stop the running Gateway")
+  .action(async () => {
+    await stopGateway();
+  });
+
+gatewayCmd
+  .command("restart")
+  .description("Restart the Gateway")
+  .option("-p, --port <port>", "Port to listen on", "18789")
+  .option("-b, --bind <bind>", "Bind address", "loopback")
+  .action(async (options) => {
+    await stopGateway();
+    await new Promise((r) => setTimeout(r, 1000));
+    await startGateway(options);
+  });
+
+gatewayCmd
+  .command("install")
+  .description("Install Gateway as a system service (auto-start)")
+  .action(async () => {
+    await installGatewayService();
   });
 
 gatewayCmd
@@ -149,31 +186,294 @@ async function startGateway(options: any): Promise<void> {
   }
 }
 
-async function checkGatewayStatus(): Promise<void> {
+async function checkGatewayStatus(options: any = {}): Promise<void> {
   try {
     const config = loadConfig();
     const port = config.gateway?.port || 18789;
 
-    console.log(pc.cyan("📊 Gateway Status:"));
-    console.log(`   Port: ${port}`);
-    console.log(`   Bind: ${config.gateway?.bind || "loopback"}`);
-    console.log(`   Auth: ${config.gateway?.auth?.mode || "none"}`);
-    console.log(
-      `   Workspace: ${config.agents?.defaults?.workspace || "~/.krab/workspace"}`,
-    );
+    const statusData: any = {
+      port,
+      bind: config.gateway?.bind || "loopback",
+      auth: config.gateway?.auth?.mode || "none",
+      workspace: config.agents?.defaults?.workspace || "~/.krab/workspace",
+      running: false,
+      health: null as any,
+      ready: null as any,
+    };
 
-    // Try to connect to check if running
-    const response = await fetch(`http://127.0.0.1:${port}/health`)
+    // Check if running
+    try {
+      const healthRes = await fetch(`http://127.0.0.1:${port}/health`);
+      if (healthRes.ok) {
+        statusData.running = true;
+        statusData.health = await healthRes.json();
+      }
+    } catch {
+      statusData.running = false;
+    }
+
+    // Deep check
+    if (options.deep && statusData.running) {
+      try {
+        const readyRes = await fetch(`http://127.0.0.1:${port}/ready`);
+        statusData.ready = readyRes.ok
+          ? await readyRes.json()
+          : { status: "not_ready" };
+      } catch {
+        statusData.ready = { status: "unreachable" };
+      }
+
+      try {
+        const statusRes = await fetch(`http://127.0.0.1:${port}/status`);
+        if (statusRes.ok) {
+          statusData.details = await statusRes.json();
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // JSON output
+    if (options.json) {
+      console.log(JSON.stringify(statusData, null, 2));
+      return;
+    }
+
+    // Pretty output
+    console.log(pc.cyan("\n📊 Gateway Status:"));
+    console.log(`   Port: ${port}`);
+    console.log(`   Bind: ${statusData.bind}`);
+    console.log(`   Auth: ${statusData.auth}`);
+    console.log(`   Workspace: ${statusData.workspace}`);
+
+    if (statusData.running) {
+      console.log(pc.green("   Runtime: ✅ Running"));
+      if (statusData.health?.uptime) {
+        const uptime = statusData.health.uptime;
+        const hours = Math.floor(uptime / 3600);
+        const mins = Math.floor((uptime % 3600) / 60);
+        console.log(pc.dim(`   Uptime: ${hours}h ${mins}m`));
+      }
+    } else {
+      console.log(pc.red("   Runtime: ❌ Not running"));
+    }
+
+    if (options.deep && statusData.running) {
+      console.log();
+      console.log(pc.cyan("   🏥 Health Probes:"));
+      console.log(
+        `   Liveness: ${statusData.health ? pc.green("✅ OK") : pc.red("❌ Failed")}`,
+      );
+      console.log(
+        `   Readiness: ${statusData.ready?.status === "ready" ? pc.green("✅ OK") : pc.yellow("⚠️  Not ready")}`,
+      );
+
+      if (statusData.details) {
+        console.log();
+        console.log(pc.cyan("   📈 Runtime Details:"));
+        console.log(
+          `   WebSocket connections: ${statusData.details.websocket?.connections ?? 0}`,
+        );
+        console.log(
+          `   Active agents: ${statusData.details.agents?.length ?? 0}`,
+        );
+        console.log(
+          `   Tools loaded: ${statusData.details.tools?.count ?? "unknown"}`,
+        );
+      }
+    }
+    console.log();
+  } catch (error) {
+    console.error(pc.red("❌ Status check failed:"), error);
+  }
+}
+
+async function stopGateway(): Promise<void> {
+  try {
+    const config = loadConfig();
+    const port = config.gateway?.port || 18789;
+
+    console.log(pc.cyan("🛑 Stopping Gateway..."));
+
+    // Check if running first
+    const isRunning = await fetch(`http://127.0.0.1:${port}/health`)
       .then((res) => res.ok)
       .catch(() => false);
 
-    if (response) {
-      console.log(pc.green("   Status: ✅ Running"));
-    } else {
-      console.log(pc.red("   Status: ❌ Not running"));
+    if (!isRunning) {
+      console.log(pc.yellow("⚠️  Gateway is not running"));
+      return;
     }
+
+    // Try PID file approach
+    const pidFile = join(homedir(), ".krab", "gateway.pid");
+    if (existsSync(pidFile)) {
+      try {
+        const pid = parseInt(readFileSync(pidFile, "utf-8").trim());
+        process.kill(pid, "SIGTERM");
+        unlinkSync(pidFile);
+        console.log(pc.green(`✅ Gateway stopped (PID: ${pid})`));
+        return;
+      } catch {
+        // PID stale, try cleanup
+        try {
+          unlinkSync(pidFile);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
+    console.log(
+      pc.yellow(
+        "⚠️  Cannot find gateway process — if running in foreground, use Ctrl+C",
+      ),
+    );
   } catch (error) {
-    console.error(pc.red("❌ Status check failed:"), error);
+    console.error(pc.red("❌ Failed to stop Gateway:"), error);
+  }
+}
+
+async function installGatewayService(): Promise<void> {
+  const platform = process.platform;
+  const krabPath = resolve(process.cwd(), "dist", "cli.js");
+  const stateDirPath = join(homedir(), ".krab");
+
+  console.log(pc.cyan("🔧 Installing Krab Gateway service...\n"));
+
+  if (platform === "win32") {
+    // Windows: Create a Scheduled Task
+    const taskName = "KrabGateway";
+    const nodePath = process.execPath;
+    const cmd = `schtasks /create /tn "${taskName}" /tr "${nodePath} ${krabPath} gateway start" /sc onlogon /rl highest /f`;
+
+    console.log(`   Platform: Windows`);
+    console.log(`   Method: Scheduled Task (${taskName})`);
+    console.log(`   Command: node ${krabPath} gateway start`);
+    console.log(`   Trigger: On logon\n`);
+
+    try {
+      execSync(cmd, { stdio: "pipe" });
+      console.log(pc.green("✅ Scheduled Task created!"));
+      console.log(
+        pc.dim(`   To remove: schtasks /delete /tn "${taskName}" /f`),
+      );
+      console.log(pc.dim(`   To run now: schtasks /run /tn "${taskName}"`));
+    } catch (error: any) {
+      console.error(pc.red("❌ Failed to create Scheduled Task"));
+      console.log(pc.dim("   You may need to run as Administrator"));
+      console.log(pc.dim(`   Manual command: ${cmd}`));
+    }
+  } else if (platform === "linux") {
+    // Linux: Create a systemd user service
+    const serviceDir = join(homedir(), ".config", "systemd", "user");
+    const serviceName = "krab-gateway";
+    const serviceFile = join(serviceDir, `${serviceName}.service`);
+
+    const serviceContent = `[Unit]
+Description=Krab Gateway Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${process.execPath} ${krabPath} gateway start
+Restart=on-failure
+RestartSec=5
+WorkingDirectory=${process.cwd()}
+Environment=HOME=${homedir()}
+Environment=KRAB_STATE_DIR=${stateDirPath}
+
+[Install]
+WantedBy=default.target
+`;
+
+    console.log(`   Platform: Linux`);
+    console.log(`   Method: systemd user service (${serviceName})`);
+    console.log(`   Service file: ${serviceFile}\n`);
+
+    try {
+      if (!existsSync(serviceDir)) {
+        mkdirSync(serviceDir, { recursive: true });
+      }
+      writeFileSync(serviceFile, serviceContent);
+
+      execSync("systemctl --user daemon-reload", { stdio: "pipe" });
+      execSync(`systemctl --user enable ${serviceName}.service`, {
+        stdio: "pipe",
+      });
+      execSync(`systemctl --user start ${serviceName}.service`, {
+        stdio: "pipe",
+      });
+
+      console.log(pc.green("✅ systemd user service installed and started!"));
+      console.log(pc.dim(`   Status: systemctl --user status ${serviceName}`));
+      console.log(pc.dim(`   Logs: journalctl --user -u ${serviceName} -f`));
+      console.log(pc.dim(`   Stop: systemctl --user stop ${serviceName}`));
+      console.log();
+      console.log(pc.yellow("💡 To persist after logout:"));
+      console.log(pc.dim(`   sudo loginctl enable-linger "$(whoami)"`));
+    } catch (error: any) {
+      console.error(pc.red("❌ Failed to install systemd service"));
+      console.log(pc.dim(`   Manual: copy service file to ${serviceFile}`));
+      console.log(
+        pc.dim(`   Then: systemctl --user enable --now ${serviceName}`),
+      );
+    }
+  } else if (platform === "darwin") {
+    // macOS: Create a launchd plist
+    const plistDir = join(homedir(), "Library", "LaunchAgents");
+    const plistName = "ai.krab.gateway";
+    const plistFile = join(plistDir, `${plistName}.plist`);
+
+    const plistContent = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${plistName}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${process.execPath}</string>
+        <string>${krabPath}</string>
+        <string>gateway</string>
+        <string>start</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>WorkingDirectory</key>
+    <string>${process.cwd()}</string>
+    <key>StandardOutPath</key>
+    <string>${join(stateDirPath, "gateway.log")}</string>
+    <key>StandardErrorPath</key>
+    <string>${join(stateDirPath, "gateway.log")}</string>
+</dict>
+</plist>
+`;
+
+    console.log(`   Platform: macOS`);
+    console.log(`   Method: launchd (${plistName})`);
+    console.log(`   Plist file: ${plistFile}\n`);
+
+    try {
+      if (!existsSync(plistDir)) {
+        mkdirSync(plistDir, { recursive: true });
+      }
+      writeFileSync(plistFile, plistContent);
+      execSync(`launchctl load ${plistFile}`, { stdio: "pipe" });
+
+      console.log(pc.green("✅ launchd service installed and loaded!"));
+      console.log(pc.dim(`   Status: launchctl list | grep ${plistName}`));
+      console.log(pc.dim(`   Unload: launchctl unload ${plistFile}`));
+    } catch (error: any) {
+      console.error(pc.red("❌ Failed to install launchd service"));
+      console.log(pc.dim(`   Manual: copy plist to ${plistFile}`));
+      console.log(pc.dim(`   Then: launchctl load ${plistFile}`));
+    }
+  } else {
+    console.log(pc.red(`❌ Unsupported platform: ${platform}`));
+    console.log(pc.dim("   Supported: Windows, Linux, macOS"));
   }
 }
 
