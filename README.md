@@ -16,6 +16,8 @@
   [![Issues](https://img.shields.io/github/issues/OpenKrab/Krab)](https://github.com/OpenKrab/Krab/issues)
 </div>
 
+![Krab](./assets/image/image.png)
+
 ---
 
 **Krab** is a comprehensive, production-ready AGI framework built for the 2026 AI landscape. It features 17 advanced capabilities including image generation, code execution, desktop automation, web browsing, voice processing, multi-agent collaboration, enterprise security, and more.
