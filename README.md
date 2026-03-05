@@ -3,8 +3,6 @@
   <p><b>Complete AGI Agent Framework — Production-Ready with 17 Advanced Features</b></p>
   <p><i>State-of-the-Art (March 2026 Ultimate Stack)</i></p>
   
-  [![Star History Chart](https://api.star-history.com/svg?repos=OpenKrab/Krab&type=Date)](https://star-history.com/#OpenKrab/Krab&Date)
-  
   <!-- Badges -->
   [![npm version](https://badge.fury.io/js/krab.svg)](https://badge.fury.io/js/krab)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -479,3 +477,5 @@ MIT License - see [LICENSE](https://github.com/OpenKrab/Krab/blob/main/LICENSE) 
   
   <sub><i>⭐ Star us on GitHub to support the project!</i></sub>
 </div>
+
+[![Star History Chart](https://api.star-history.com/svg?repos=openkrab/Krab&type=Date)](https://star-history.com/#openkrab/Krab&Date)
