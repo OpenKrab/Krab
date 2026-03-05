@@ -418,6 +418,16 @@ Krab implements enterprise-grade security:
 - **Scalable**: Cloud-ready architecture
 - **Reliable**: 99.9% uptime capability
 
+## 📱 Deployment Platforms
+
+| Platform | Guide | Use Case |
+|----------|-------|----------|
+| **Raspberry Pi** | [docs/raspberry-pi.md](docs/raspberry-pi.md) | 24/7 home assistant ($2/mo) |
+| **VPS** | [docs/vps-deployment.md](docs/vps-deployment.md) | Cloud server |
+| **Docker** | [docs/docker-deployment.md](docs/docker-deployment.md) | Container |
+| **Railway** | [docs/railway-deployment.md](docs/railway-deployment.md) | One-click deploy |
+| **Render** | [docs/render-deployment.md](docs/render-deployment.md) | Free tier |
+
 ## 🌐 Providers
 
 Krab supports 15+ LLM providers:
