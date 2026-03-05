@@ -158,6 +158,7 @@ import { sessionCommand } from "./cli/session.js";
 import { agentCommand } from "./cli/agent.js";
 import { browserCommand } from "./cli/browser.js";
 import { updateCommand } from "./cli/update.js";
+import { pairingCommand } from "./cli/pairing.js";
 
 // ── CLI Program (must be before addCommand calls) ────────
 const program = new Command();
@@ -182,6 +183,7 @@ program.addCommand(sessionCommand);
 program.addCommand(agentCommand);
 program.addCommand(browserCommand);
 program.addCommand(updateCommand);
+program.addCommand(pairingCommand);
 
 // ── Handle Special Commands ────────────────────────────────
 function handleSpecialCommand(input: string, agent: Agent): boolean {
