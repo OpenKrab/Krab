@@ -146,3 +146,23 @@ export function loadConfig(): KrabConfig {
     debug: process.env.KRAB_DEBUG === "true",
   };
 }
+
+export function saveConfig(config: KrabConfig): void {
+  // Save config to .env file (simplified - real implementation would save JSON)
+  const envPath = resolve(process.cwd(), ".env");
+  const lines: string[] = [];
+  
+  if (config.provider?.name) {
+    lines.push(`KRAB_PROVIDER=${config.provider.name}`);
+  }
+  if (config.provider?.model) {
+    lines.push(`KRAB_MODEL=${config.provider.model}`);
+  }
+  if (config.provider?.apiKey) {
+    lines.push(`KRAB_API_KEY=${config.provider.apiKey}`);
+  }
+  
+  import("node:fs").then(fs => {
+    fs.writeFileSync(envPath, lines.join("\n") + "\n");
+  });
+}

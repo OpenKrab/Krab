@@ -4,6 +4,11 @@
   "description": "🦀 Krab — Lightweight AGI Agent Framework. The lighter, smarter cousin of Claw.",
   "type": "module",
   "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./types": "./dist/plugins/types.js",
+    "./sdk": "./dist/plugins/index.js"
+  },
   "bin": {
     "krab": "dist/cli.js",
     "create-krab": "bin/install.js"

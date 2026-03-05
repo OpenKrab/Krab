@@ -133,6 +133,9 @@ for (const tool of securityTools) {
   registry.register(tool);
 }
 
+// ── Plugin System ───────────────────────────────────────────────────
+import { pluginLoader } from "./plugins/loader.js";
+
 // ── Register Obsidian Tools ───────────────────────────────────────────────
 import { obsidianTools } from "./tools/built-in/obsidian.js";
 
@@ -159,6 +162,19 @@ import { agentCommand } from "./cli/agent.js";
 import { browserCommand } from "./cli/browser.js";
 import { updateCommand } from "./cli/update.js";
 import { pairingCommand } from "./cli/pairing.js";
+import { modelsCommand } from "./cli/models.js";
+import { logsCommand } from "./cli/logs.js";
+import { systemCommand } from "./cli/system.js";
+import { skillsCommand } from "./cli/skills.js";
+import { messageCommand } from "./cli/message.js";
+import { setupCommand } from "./cli/setup.js";
+import { secretsCommand } from "./cli/secrets.js";
+import { daemonCommand } from "./cli/daemon.js";
+import { voicecallCommand } from "./cli/voicecall.js";
+import { hooksCommand } from "./cli/hooks.js";
+import { nodesCommand } from "./cli/nodes.js";
+import { pluginsCommand } from "./cli/plugins.js";
+import { execApprovalsCommand } from "./cli/exec-approvals.js";
 
 // ── CLI Program (must be before addCommand calls) ────────
 const program = new Command();
@@ -184,6 +200,19 @@ program.addCommand(agentCommand);
 program.addCommand(browserCommand);
 program.addCommand(updateCommand);
 program.addCommand(pairingCommand);
+program.addCommand(modelsCommand);
+program.addCommand(logsCommand);
+program.addCommand(systemCommand);
+program.addCommand(skillsCommand);
+program.addCommand(messageCommand);
+program.addCommand(setupCommand);
+program.addCommand(secretsCommand);
+program.addCommand(daemonCommand);
+program.addCommand(nodesCommand);
+program.addCommand(pluginsCommand);
+program.addCommand(execApprovalsCommand);
+program.addCommand(voicecallCommand);
+program.addCommand(hooksCommand);
 
 // ── Handle Special Commands ────────────────────────────────
 function handleSpecialCommand(input: string, agent: Agent): boolean {
@@ -236,8 +265,36 @@ function handleSpecialCommand(input: string, agent: Agent): boolean {
     return true;
   }
 
-  if (cmd === "/help") {
+  if (cmd === "/plugins") {
+    const stats = pluginLoader.count();
+    console.log(pc.cyan("\n🧩 Plugins:"));
+    if (stats.total === 0) {
+      console.log("  No plugins installed.");
+      console.log(pc.dim("  Install plugins to ~/.krab/plugins/ or ./krab-plugins/"));
+    } else {
+      for (const plugin of pluginLoader.list()) {
+        const status = plugin.status === "loaded" 
+          ? pc.green("✅") 
+          : plugin.status === "error" 
+            ? pc.red("❌") 
+            : pc.yellow("⏸️");
+        const tools = plugin.registeredTools.length > 0
+          ? pc.dim(` (tools: ${plugin.registeredTools.join(", ")})`)
+          : "";
+        console.log(`  ${status} ${pc.bold(plugin.manifest.name)} v${plugin.manifest.version}${tools}`);
+        if (plugin.error) {
+          console.log(`     ${pc.red(plugin.error)}`);
+        }
+      }
+      console.log(pc.dim(`\n  Total: ${stats.loaded} loaded, ${stats.error} errors, ${stats.disabled} disabled`));
+    }
+    console.log();
+    return true;
+  }
+
+    if (cmd === "/help") {
     console.log(pc.cyan("\n📚 Commands:"));
+    console.log("  /plugins — Show loaded plugins");
     console.log("  /tools   — List all registered tools");
     console.log("  /memory  — Show memory usage");
     console.log("  /clear   — Clear conversation history");
@@ -361,4 +418,23 @@ program.action(async () => {
   }
 });
 
-program.parse();
+// ── Load Plugins (dynamic, no core edits needed) ───────────────
+async function loadPlugins() {
+  try {
+    const loaded = await pluginLoader.loadAll();
+    const stats = pluginLoader.count();
+    if (stats.total > 0) {
+      logger.info(
+        `[🧩 Plugins] ${stats.loaded} loaded, ${stats.error} errors, ${stats.disabled} disabled`
+      );
+    }
+  } catch (err) {
+    logger.warn(`[Plugins] Failed to load plugins: ${err}`);
+  }
+}
+
+// Load plugins then parse CLI
+loadPlugins().then(() => {
+  program.parse();
+});
+
