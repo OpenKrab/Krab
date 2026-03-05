@@ -133,6 +133,12 @@ for (const tool of securityTools) {
   registry.register(tool);
 }
 
+// ── Register Obsidian Tools ───────────────────────────────────────────────
+import { obsidianTools } from "./tools/built-in/obsidian.js";
+
+for (const tool of obsidianTools) {
+  registry.register(tool);
+}
 // ── Register Scheduler Commands ───────────────────────────────
 import { createSchedulerCommands } from "./scheduler/cli.js";
 
@@ -144,6 +150,13 @@ import { bannerCommand } from "./cli/banner-commands.js";
 
 // ── Register Taglines Command ───────────────────────────────
 import { taglinesCommand } from "./cli/taglines-commands.js";
+
+// ── Register New Commands ───────────────────────────────────
+import { doctorCommand } from "./cli/doctor.js";
+import { securityCommand } from "./cli/security.js";
+import { sessionCommand } from "./cli/session.js";
+import { agentCommand } from "./cli/agent.js";
+import { browserCommand } from "./cli/browser.js";
 
 // ── CLI Program (must be before addCommand calls) ────────
 const program = new Command();
@@ -162,6 +175,11 @@ program.addCommand(mcpCmd);
 program.addCommand(jobCmd);
 program.addCommand(bannerCommand);
 program.addCommand(taglinesCommand);
+program.addCommand(doctorCommand);
+program.addCommand(securityCommand);
+program.addCommand(sessionCommand);
+program.addCommand(agentCommand);
+program.addCommand(browserCommand);
 
 // ── Handle Special Commands ────────────────────────────────
 function handleSpecialCommand(input: string, agent: Agent): boolean {

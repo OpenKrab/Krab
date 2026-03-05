@@ -2,7 +2,7 @@
 // 🦀 Krab — Interactive Chat TUI
 // ============================================================
 import * as p from "@clack/prompts";
-import * as pc from "picocolors";
+import pc from "picocolors";
 import { Agent } from "../core/agent.js";
 import { loadConfig } from "../core/config.js";
 import { createInterface } from "readline";
@@ -31,7 +31,7 @@ export async function runChat() {
   const messages: ChatMessage[] = [];
   
   // Header
-  console.log(pc.bgCyan(pc.black(" 🦀 Krab Chat ")));
+  console.log(pc.bold(" 🦀 Krab Chat "));
   console.log(pc.dim(`Provider: ${config.provider.name} | Model: ${config.provider.model}`));
   console.log(pc.dim("คำสั่ง: /exit = ออก, /clear = ล้าง, /help = ช่วยเหลือ\n"));
   
@@ -67,7 +67,7 @@ export async function runChat() {
         case "clear":
         case "cls":
           console.clear();
-          console.log(pc.bgCyan(pc.black(" 🦀 Krab Chat ")));
+          console.log(pc.bold(" 🦀 Krab Chat "));
           console.log(pc.dim(`Provider: ${config.provider.name} | Model: ${config.provider.model}\n`));
           messages.length = 0;
           continue;
