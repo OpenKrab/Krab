@@ -478,4 +478,4 @@ MIT License - see [LICENSE](https://github.com/OpenKrab/Krab/blob/main/LICENSE) 
   <sub><i>⭐ Star us on GitHub to support the project!</i></sub>
 </div>
 
-[![Star History Chart](https://api.star-history.com/svg?repos=openkrab/Krab&type=Date)](https://star-history.com/#openkrab/Krab&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=OpenKrab/Krab&type=Date)](https://star-history.com/#OpenKrab/Krab&Date)
