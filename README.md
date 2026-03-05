@@ -172,28 +172,55 @@ sequenceDiagram
 ## ✨ Key Features (2026 Complete Stack)
 
 ### 🎨 **Creative & Media**
+
 - **Image Generation**: AI-powered image creation and editing
 - **Voice Intelligence**: Speech-to-text and text-to-speech with multiple providers
 
 ### 🖥️ **Automation & Control**
+
 - **Desktop Control**: Mouse, keyboard, and screen automation with computer vision
 - **Web Automation**: Browser control and data extraction with Playwright
 - **Code Execution**: Safe multi-language programming environment
 
 ### 🤝 **Collaboration & Communication**
+
 - **Multi-Agent System**: Agent coordination and task delegation
 - **MCP Integration**: Model Context Protocol for inter-agent communication
 - **Task Scheduling**: Automated cron-based task execution
 
+### 🧠 **Knowledge & Extensibility**
+
+- **Obsidian Integration**: Deep connection with your local knowledge base (Knowledge Graph, Daily Notes, Tag management)
+- **Plugin Ecosystem**: Lego-style modular architecture. Add new tools, agents, or middleware without touching core code.
+
 ### 📊 **Enterprise Features**
+
 - **Advanced Analytics**: Performance monitoring and Vercel AI tracing
 - **Security System**: Enterprise-grade authentication, authorization, and audit logging
 - **Cloud Deployment**: Scalable infrastructure and gateway server
 
 ### 🔧 **Developer Tools**
+
 - **SDK Integration**: Complete development toolkit
 - **Web Interface**: Real-time collaborative chat platform
 - **Desktop Application**: Electron-based client
+
+## 🧩 **Plugin Ecosystem (Lego Architecture)**
+
+Krab is designed to be infinitely extensible. Our plugin system allows you to create your own "blocks" and plug them in seamlessly.
+
+```bash
+# Create a new tool plugin in seconds
+krab plugins create my-custom-tool --type tool
+
+# Install a local plugin
+krab plugins install ./my-plugin-folder
+
+# List all plugins
+krab plugins list
+```
+
+---
 
 ## 🚀 Quick Start
 
@@ -220,6 +247,7 @@ cp .env.example .env
 ```
 
 Add your preferred API key (e.g., `GEMINI_API_KEY`, `KILOCODE_API_KEY`, `OPENAI_API_KEY`).
+For Obsidian support, set `OBSIDIAN_VAULT_PATH=/path/to/your/vault`.
 
 ### 3. Build & Run
 
@@ -237,26 +265,37 @@ npm run dev
 ## 🎯 Usage Examples
 
 ### Interactive Chat
+
 ```bash
 npm start chat
 ```
 
 ### Quick Questions
+
 ```bash
 npm start ask "Generate an image of a futuristic city"
 ```
 
+### Knowledge Base (Obsidian)
+
+```bash
+npm start ask "Search my obsidian vault for notes about AGI and summarize them"
+```
+
 ### Web Automation
+
 ```bash
 npm start ask "Navigate to example.com and extract the main heading"
 ```
 
 ### Code Execution
+
 ```bash
 npm start ask "Write a Python script to analyze this dataset"
 ```
 
 ### Desktop Control
+
 ```bash
 npm start ask "Take a screenshot and save it to desktop"
 ```
@@ -264,18 +303,28 @@ npm start ask "Take a screenshot and save it to desktop"
 ## 🛠️ Available Commands
 
 ### Core Commands
+
 - `krab chat` - Start interactive chat session
 - `krab ask <question>` - Ask a single question
 - `krab tools` - List all available tools
 - `krab config` - Manage configuration
 
+### Plugin Commands
+
+- `krab plugins list` - List all installed plugins
+- `krab plugins create` - Scaffold a new plugin project
+- `krab plugins doctor` - Check plugin health
+
 ### Advanced Commands
+
 - `krab gateway` - Start web API server
 - `krab scheduler` - Manage scheduled tasks
 - `krab analytics` - View performance metrics
 - `krab security` - Security management
 
 ### In-Chat Commands
+
+- `/plugins` - Show loaded plugins and their status
 - `/tools` - View all loaded tools and permissions
 - `/memory` - Check conversation buffer status
 - `/debug` - View current provider and configuration
@@ -285,6 +334,7 @@ npm start ask "Take a screenshot and save it to desktop"
 ## 🏗️ Architecture
 
 ### ✅ **Completed Features (Phase 1-4)**
+
 1. **Core AGI Engine** - Advanced reasoning and tool integration
 2. **Voice Intelligence** - Complete STT/TTS system
 3. **Desktop Automation** - Mouse, keyboard, vision control
@@ -301,35 +351,49 @@ npm start ask "Take a screenshot and save it to desktop"
 14. **Scheduler System** - Automated task execution
 15. **Browser Agent** - Web automation with AI vision
 16. **Security Enhancements** - Enterprise security and compliance
-17. **Testing & Validation** - Framework testing and validation
+17. **Obsidian Integration** ❤️ - Deep Knowledge Base connection
+18. **Plugin Ecosystem** 🧩 - Lego-style modular architecture
+19. **Testing & Validation** - Framework testing and validation
 
 ### 🚧 **Pending Features (Phase 5)**
+
 - **Mobile Apps** - React Native iOS/Android applications
 - **Enterprise Features** - Advanced business capabilities
 
 ## 🔧 Built-in Tools
 
-Krab includes 50+ powerful tools across 17 feature categories:
+Krab includes 60+ powerful tools across 19 feature categories:
 
 ### **System Tools**
+
 - `get_datetime` - Time and timezone awareness
 - `shell` - Safe shell execution with approval
 - `web_search` - Hybrid search capabilities
 - `file_ops` - File system operations
 
+### **Knowledge Tools (Obsidian)**
+
+- `obsidian_search` - Global vault search
+- `obsidian_read` - Read notes with metadata
+- `obsidian_daily` - Daily notes management
+- `obsidian_stats` - Vault analytics and graph data
+
 ### **Creative Tools**
+
 - `image_generate` - AI image generation
 - `image_edit` - Image manipulation
 - `voice_speak` - Text-to-speech
 - `voice_transcribe` - Speech-to-text
 
 ### **Automation Tools**
+
 - `browser_navigate` - Web browsing
 - `computer_click` - Desktop control
 - `computer_type` - Keyboard automation
 - `code_execute` - Multi-language code execution
 
 ### **Enterprise Tools**
+
 - `security_auth` - Authentication
 - `analytics_trace` - Performance monitoring
 - `scheduler_task` - Task scheduling
@@ -376,7 +440,7 @@ MIT License - see [LICENSE](https://github.com/OpenKrab/Krab/blob/main/LICENSE) 
 <div align="center">
   <p><b>🦀 Krab — Complete AGI Framework for 2026</b></p>
   <p><i>Built with 💙 for the AI revolution</i></p>
-  <p><b>17 Features • 50+ Tools • Enterprise-Ready • Production-Tested</b></p>
+  <p><b>19 Features • 60+ Tools • Extension Ready • Production-Tested</b></p>
   
   <br>
   
