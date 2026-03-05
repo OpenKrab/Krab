@@ -10,7 +10,6 @@ import { registry } from "./tools/registry.js";
 import { logger } from "./utils/logger.js";
 import { GatewayServer } from "./gateway/server.js";
 import { runChat } from "./tui/chat.js";
-import { runWizard } from "./tui/wizard.js";
 import { startTUI } from "./tui/ink-app.js";
 import { runOnboarding } from "./cli/onboarding.js";
 import { gatewayCmd, configCmd, channelsCmd, mcpCmd, jobCmd } from "./cli/gateway-commands.js";
@@ -302,13 +301,8 @@ program
 // gatewayCmd, configCmd, channelsCmd, mcpCmd, jobCmd already added above
 
 program
-  .command("wizard")
-  .description("Run setup wizard for Krab configuration")
-  .action(() => runWizard());
-
-program
   .command("onboard")
-  .description("Run interactive onboarding wizard (OpenClaw-inspired)")
+  .description("Run interactive onboarding wizard")
   .action(() => runOnboarding());
 
 program
@@ -341,9 +335,6 @@ program.action(async () => {
     console.log("It looks like this is your first time running Krab.");
     console.log("Run the onboarding wizard to get started:\n");
     console.log(pc.cyan("  krab onboard"));
-    console.log("");
-    console.log(pc.dim("Or run the classic wizard:"));
-    console.log(pc.dim("  krab wizard"));
     console.log("");
   }
 });
