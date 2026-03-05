@@ -12,6 +12,7 @@ import { GatewayServer } from "./gateway/server.js";
 import { runChat } from "./tui/chat.js";
 import { runWizard } from "./tui/wizard.js";
 import { startTUI } from "./tui/ink-app.js";
+import { runOnboarding } from "./cli/onboarding.js";
 import { gatewayCmd, configCmd, channelsCmd, mcpCmd, jobCmd } from "./cli/gateway-commands.js";
 
 // ── Register Built-in Tools ────────────────────────────────
@@ -306,6 +307,11 @@ program
   .action(() => runWizard());
 
 program
+  .command("onboard")
+  .description("Run interactive onboarding wizard (OpenClaw-inspired)")
+  .action(() => runOnboarding());
+
+program
   .command("ask")
   .description("Ask Krab a single question")
   .argument("<question...>", "Your question")
@@ -319,7 +325,27 @@ program
     console.log(pc.blue(`\n🦀 Krab: `) + response + "\n");
   });
 
-// Default to chat mode
-program.action(startChat);
+// Default action - check if configured
+program.action(async () => {
+  try {
+    // Try to load config
+    loadConfig();
+    // If successful, start chat
+    await startChat();
+  } catch (err: any) {
+    // No config found - suggest onboarding
+    console.log(pc.bgCyan(pc.black(" 🦀 Krab ")));
+    console.log("");
+    console.log(pc.yellow("⚠️  No configuration found!"));
+    console.log("");
+    console.log("It looks like this is your first time running Krab.");
+    console.log("Run the onboarding wizard to get started:\n");
+    console.log(pc.cyan("  krab onboard"));
+    console.log("");
+    console.log(pc.dim("Or run the classic wizard:"));
+    console.log(pc.dim("  krab wizard"));
+    console.log("");
+  }
+});
 
 program.parse();
