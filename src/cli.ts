@@ -157,6 +157,7 @@ import { securityCommand } from "./cli/security.js";
 import { sessionCommand } from "./cli/session.js";
 import { agentCommand } from "./cli/agent.js";
 import { browserCommand } from "./cli/browser.js";
+import { updateCommand } from "./cli/update.js";
 
 // ── CLI Program (must be before addCommand calls) ────────
 const program = new Command();
@@ -180,6 +181,7 @@ program.addCommand(securityCommand);
 program.addCommand(sessionCommand);
 program.addCommand(agentCommand);
 program.addCommand(browserCommand);
+program.addCommand(updateCommand);
 
 // ── Handle Special Commands ────────────────────────────────
 function handleSpecialCommand(input: string, agent: Agent): boolean {

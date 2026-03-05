@@ -89,7 +89,7 @@ function extractWikilinks(content: string): string[] {
   while ((match = regex.exec(content)) !== null) {
     links.push(match[1].trim());
   }
-  return [...new Set(links)];
+  return Array.from(new Set(links));
 }
 
 /** Extract all #tags from content */
@@ -101,7 +101,7 @@ function extractTags(content: string): string[] {
   while ((match = regex.exec(content)) !== null) {
     tags.push(match[1]);
   }
-  return [...new Set(tags)];
+  return Array.from(new Set(tags));
 }
 
 /** Simple text search scoring */
@@ -631,7 +631,7 @@ export const obsidianTagsTool: ToolDefinition = {
       }
 
       // Sort by count descending
-      const sorted = [...tagCounts.entries()]
+      const sorted = Array.from(tagCounts.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, args.maxResults);
 
@@ -963,12 +963,12 @@ export const obsidianStatsTool: ToolDefinition = {
       recentFiles.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
 
       // Top tags
-      const topTags = [...allTags.entries()]
+      const topTags = Array.from(allTags.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, 10);
 
       // Top folders
-      const topFolders = [...folderCounts.entries()]
+      const topFolders = Array.from(folderCounts.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, 10);
 
