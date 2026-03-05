@@ -5,7 +5,11 @@ import { generateStructured } from "../providers/llm.js";
 import { executeToolCalls } from "../tools/executor.js";
 import { registry } from "../tools/registry.js";
 import { ConversationMemory } from "../memory/conversation-enhanced.js";
-import { Reflector, shouldRetryBasedOnQuality, formatReflectionSummary } from "./reflector.js";
+import {
+  Reflector,
+  shouldRetryBasedOnQuality,
+  formatReflectionSummary,
+} from "./reflector.js";
 import { logger } from "../utils/logger.js";
 import type { KrabConfig, Message } from "./types.js";
 import pc from "picocolors";
@@ -54,9 +58,17 @@ export class Agent {
     this.memory = new ConversationMemory(workspace);
     this.reflector = new Reflector(config, config.reflector);
   }
-
   // ── Main entry point ───────────────────────────────────────
-  async chat(userInput: string): Promise<string> {
+  async chat(
+    userInput: string,
+    options?: {
+      conversationId?: string;
+      messages?: Message[];
+    },
+  ): Promise<string> {
+    if (options?.messages) {
+      await this.memory.setAll(options.messages);
+    }
     this.memory.add({ role: "user", content: userInput });
     this.iterationCount = 0;
 
@@ -68,28 +80,39 @@ export class Agent {
         const reflection = await this.reflector.reflect(
           userInput,
           response,
-          this.memory.getAll()
+          this.memory.getAll(),
         );
 
         if (this.config.debug) {
-          console.log(pc.dim(`🔍 Reflection: ${formatReflectionSummary(reflection)}`));
+          console.log(
+            pc.dim(`🔍 Reflection: ${formatReflectionSummary(reflection)}`),
+          );
           if (reflection.suggestions.length > 0) {
-            console.log(pc.dim(`💡 Suggestions: ${reflection.suggestions.join(", ")}`));
+            console.log(
+              pc.dim(`💡 Suggestions: ${reflection.suggestions.join(", ")}`),
+            );
           }
         }
 
         // Check if response quality is acceptable
-        if (!shouldRetryBasedOnQuality(reflection, this.config.reflector.threshold)) {
+        if (
+          !shouldRetryBasedOnQuality(
+            reflection,
+            this.config.reflector.threshold,
+          )
+        ) {
           return response;
         }
 
         // Response needs improvement, add feedback and retry
-        logger.info(`[Agent] Response quality too low (${reflection.score}), retrying with feedback`);
+        logger.info(
+          `[Agent] Response quality too low (${reflection.score}), retrying with feedback`,
+        );
 
         // Add reflection feedback to memory
         this.memory.add({
           role: "assistant",
-          content: `[Reflection] Previous response needs improvement. Quality: ${reflection.quality} (${reflection.score}/100). ${reflection.feedback}. ${reflection.suggestions.join(" ")}. Let me try again...`
+          content: `[Reflection] Previous response needs improvement. Quality: ${reflection.quality} (${reflection.score}/100). ${reflection.feedback}. ${reflection.suggestions.join(" ")}. Let me try again...`,
         });
 
         // Reset iteration count and retry
@@ -100,18 +123,21 @@ export class Agent {
         const secondReflection = await this.reflector.reflect(
           userInput,
           improvedResponse,
-          this.memory.getAll()
+          this.memory.getAll(),
         );
 
         if (this.config.debug) {
-          console.log(pc.dim(`🔍 Improved response: ${formatReflectionSummary(secondReflection)}`));
+          console.log(
+            pc.dim(
+              `🔍 Improved response: ${formatReflectionSummary(secondReflection)}`,
+            ),
+          );
         }
 
         return improvedResponse;
       }
 
       return response;
-
     } catch (err: any) {
       logger.error(`[Agent] Fatal error: ${err.message}`);
       return `❌ Error: ${err.message}`;
@@ -126,24 +152,19 @@ export class Agent {
 
     while (this.iterationCount < maxIterations) {
       this.iterationCount++;
-      logger.debug(
-        `[Agent] Iteration ${this.iterationCount}/${maxIterations}`,
-      );
+      logger.debug(`[Agent] Iteration ${this.iterationCount}/${maxIterations}`);
 
       // Get provider config with fallback
       const providerConfig = this.config.provider || {
         name: "google",
         model: "gemini-2.0-flash",
-        apiKey: process.env.GEMINI_API_KEY
+        apiKey: process.env.GEMINI_API_KEY,
       };
 
       // 1. THINK — Generate structured output
       let output;
       try {
-        output = await generateStructured(
-          providerConfig,
-          this.memory.getAll(),
-        );
+        output = await generateStructured(providerConfig, this.memory.getAll());
       } catch (err: any) {
         // Error recovery: retry with reflection
         retryCount++;
@@ -263,7 +284,11 @@ export class Agent {
     return await this.memory.findSimilar(content, limit);
   }
 
-  async searchConversation(conversationId: string, query: string, limit: number = 5): Promise<any[]> {
+  async searchConversation(
+    conversationId: string,
+    query: string,
+    limit: number = 5,
+  ): Promise<any[]> {
     return await this.memory.searchConversation(conversationId, query, limit);
   }
 
@@ -285,7 +310,8 @@ export class Agent {
       const contextMessages: Message[] = [];
 
       for (const result of similarResults) {
-        if (result.score > 0.3) { // Only include relevant results
+        if (result.score > 0.3) {
+          // Only include relevant results
           contextMessages.push({
             role: "system",
             content: `[Context from memory (${Math.round(result.score * 100)}% relevance)]: ${result.entry.content}`,
@@ -294,11 +320,12 @@ export class Agent {
       }
 
       if (contextMessages.length > 0) {
-        logger.debug(`[Agent] Retrieved ${contextMessages.length} context messages from vector memory`);
+        logger.debug(
+          `[Agent] Retrieved ${contextMessages.length} context messages from vector memory`,
+        );
       }
 
       return contextMessages;
-
     } catch (error) {
       logger.warn(`[Agent] Context retrieval failed: ${error}`);
       return [];
@@ -306,11 +333,14 @@ export class Agent {
   }
 
   // Enhanced chat method with memory context
-  async chatWithMemory(userInput: string, options: {
-    conversationId?: string;
-    useMemory?: boolean;
-    maxContextItems?: number;
-  } = {}): Promise<string> {
+  async chatWithMemory(
+    userInput: string,
+    options: {
+      conversationId?: string;
+      useMemory?: boolean;
+      maxContextItems?: number;
+    } = {},
+  ): Promise<string> {
     const { conversationId, useMemory = true, maxContextItems = 3 } = options;
 
     // Add user message to memory
@@ -333,16 +363,19 @@ export class Agent {
     // Update system prompt with memory context info
     const enhancedSystemPrompt = SYSTEM_PROMPT.replace(
       "{tools}",
-      registry.getAll().map(t => `- ${t.name}: ${t.description}`).join("\n")
+      registry
+        .getAll()
+        .map((t) => `- ${t.name}: ${t.description}`)
+        .join("\n"),
     );
 
     // Replace system message with enhanced version
-    const messages = allMessages.map(msg =>
-      msg.role === "system" ? { ...msg, content: enhancedSystemPrompt } : msg
+    const messages = allMessages.map((msg) =>
+      msg.role === "system" ? { ...msg, content: enhancedSystemPrompt } : msg,
     );
 
     // Ensure we have a system message
-    if (!messages.some(m => m.role === "system")) {
+    if (!messages.some((m) => m.role === "system")) {
       messages.unshift({ role: "system", content: enhancedSystemPrompt });
     }
 
@@ -353,7 +386,7 @@ export class Agent {
     const providerConfig = this.config.provider || {
       name: "google",
       model: "gemini-2.0-flash",
-      apiKey: process.env.GEMINI_API_KEY
+      apiKey: process.env.GEMINI_API_KEY,
     };
 
     try {
@@ -369,18 +402,19 @@ export class Agent {
       // Handle tool calls (simplified - would need full react loop)
       if (output.tool_calls.length > 0) {
         const results = await executeToolCalls(output.tool_calls);
-        const response = results.map(r =>
-          r.result.success
-            ? `✅ ${r.name}: ${r.result.output}`
-            : `❌ ${r.name}: ${r.result.error}`
-        ).join("\n");
+        const response = results
+          .map((r) =>
+            r.result.success
+              ? `✅ ${r.name}: ${r.result.output}`
+              : `❌ ${r.name}: ${r.result.error}`,
+          )
+          .join("\n");
 
         this.memory.add({ role: "assistant", content: response });
         return response;
       }
 
       return "I need more information to help you with that.";
-
     } catch (error) {
       logger.error(`[Agent] Chat with memory failed: ${error}`);
       return `❌ Error: ${error instanceof Error ? error.message : String(error)}`;

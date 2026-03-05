@@ -1,0 +1,17 @@
+{
+    "name": "krab-discord",
+    "version": "1.0.0",
+    "description": "Discord Channel for Krab",
+    "author": "Krab Team",
+    "krab": {
+        "entry": "src/index.ts",
+        "type": "channel"
+    },
+    "channels": [
+        {
+            "name": "discord",
+            "platform": "discord",
+            "export": "discordChannel"
+        }
+    ]
+}

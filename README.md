@@ -418,15 +418,30 @@ Krab implements enterprise-grade security:
 - **Scalable**: Cloud-ready architecture
 - **Reliable**: 99.9% uptime capability
 
+### 🔌 Krab Plugin System
+
+Krab now supports a powerful, extensible plugin system for communication channels and more:
+
+- **Telegram Channel**: Integration via grammY with automatic message routing.
+- **WhatsApp Channel**: Multi-device support via Baileys (scan QR to connect).
+- **Discord Channel**: Full bot support with DM and channel integration.
+- **Web Control UI**: A modern, glassmorphic dashboard for monitoring gateway status and managing active channels.
+
+### 🛣️ Advanced Features
+
+- **Multi-Agent Routing**: Route messages to specific agents based on sender/workspace.
+- **Session Isolation**: Each communication session maintains its own memory and context.
+- **Vector Memory**: Long-term semantic search across all conversations.
+- **Service Installation**: Easily install Krab Gateway as a system service on Windows, Linux, and macOS.
+
 ## 📱 Deployment Platforms
 
-| Platform | Guide | Use Case |
-|----------|-------|----------|
-| **Raspberry Pi** | [docs/raspberry-pi.md](docs/raspberry-pi.md) | 24/7 home assistant ($2/mo) |
-| **VPS** | [docs/vps-deployment.md](docs/vps-deployment.md) | Cloud server |
-| **Docker** | [docs/docker-deployment.md](docs/docker-deployment.md) | Container |
-| **Railway** | [docs/railway-deployment.md](docs/railway-deployment.md) | One-click deploy |
-| **Render** | [docs/render-deployment.md](docs/render-deployment.md) | Free tier |
+- [Raspberry Pi Deployment Guide](./docs/raspberry-pi.md)
+- [Gateway Setup Guide](./docs/gateway.md)
+- [VPS Deployment Guide](./docs/vps-deployment.md)
+- [Docker Deployment Guide](./docs/docker-deployment.md)
+- [Railway Deployment Guide](./docs/railway-deployment.md)
+- [Render Deployment Guide](./docs/render-deployment.md)
 
 ## 🌐 Providers
 

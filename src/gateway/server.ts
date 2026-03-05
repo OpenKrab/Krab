@@ -10,6 +10,12 @@ import { Agent } from "../core/agent.js";
 import { loadConfig } from "../core/config.js";
 import { ConversationMemory } from "../memory/conversation-enhanced.js";
 import { registry } from "../tools/registry.js";
+import { ChannelManager } from "../channels/manager.js";
+import { readFileSync, existsSync, statSync } from "fs";
+import { join, resolve } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 interface GatewayConfig {
   port: number;
@@ -69,6 +75,8 @@ export class GatewayServer {
   private rateLimitMap: Map<string, RateLimitEntry> = new Map();
   private conversations: ConversationMemory;
   private agents: Map<string, Agent> = new Map();
+  private defaultAgent: Agent;
+  private channelManager: ChannelManager;
   private startTime: number = Date.now();
 
   constructor(config: GatewayConfig, workspace: string) {
@@ -83,6 +91,10 @@ export class GatewayServer {
     this.wss.on("connection", (ws, req) => {
       this.handleWebSocketConnection(ws, req);
     });
+
+    // Initialize one default agent
+    this.defaultAgent = new Agent(loadConfig());
+    this.channelManager = new ChannelManager(this.defaultAgent);
   }
 
   async start(): Promise<void> {
@@ -95,6 +107,14 @@ export class GatewayServer {
         logger.info(`[Gateway] Mode: ${this.config.auth.mode}`);
         logger.info(`[Gateway] WebSocket: ws://${bind}:${port}`);
         logger.info(`[Gateway] HTTP APIs: http://${bind}:${port}`);
+
+        // Start channels
+        this.channelManager.start().catch((err) => {
+          logger.error(
+            `[Gateway] Failed to start ChannelManager: ${err.message}`,
+          );
+        });
+
         resolve();
       });
 
@@ -106,6 +126,7 @@ export class GatewayServer {
   }
 
   async stop(): Promise<void> {
+    await this.channelManager.stop();
     return new Promise((resolve) => {
       this.wss.close();
       this.server.close(() => {
@@ -305,6 +326,35 @@ export class GatewayServer {
 
     // Route
     try {
+      // Root — Serve Web Control UI
+      if (path === "/" || path === "/index.html") {
+        const indexPath = join(__dirname, "static", "index.html");
+        if (existsSync(indexPath)) {
+          res.writeHead(200, { "Content-Type": "text/html" });
+          res.end(readFileSync(indexPath));
+          return;
+        }
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("Krab Gateway is running. Web UI not found.");
+        return;
+      }
+
+      // Status API
+      if (path === "/v1/status" && req.method === "GET") {
+        const stats = {
+          version: "0.1.0",
+          serverTime: new Date().toISOString(),
+          uptime: (Date.now() - this.startTime) / 1000,
+          memory: process.memoryUsage().rss / 1024 / 1024,
+          channels: this.channelManager.getStats(),
+          agent: this.defaultAgent.getMemoryStats(),
+        };
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(stats));
+        return;
+      }
+
+      // OpenAI-compatible Chat Completions
       if (path === "/v1/chat/completions" && req.method === "POST") {
         await this.handleChatCompletions(req, res);
       } else if (path === "/v1/models" && req.method === "GET") {
@@ -611,8 +661,6 @@ export class GatewayServer {
         authenticated =
           token === this.config.auth.token ||
           authHeader === `Bearer ${this.config.auth.token}`;
-      } else if (this.config.auth.mode === "none") {
-        authenticated = true;
       } else {
         // For password/trusted-proxy, check header
         this.authenticateRequest(req).then((ok) => {

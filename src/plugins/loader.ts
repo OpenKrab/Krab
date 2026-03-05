@@ -16,6 +16,7 @@ import {
   type MiddlewareFn,
   type PluginRegistryFile,
   type PluginRegistryEntry,
+  type Channel,
 } from "./types.js";
 import type { ToolDefinition } from "../core/types.js";
 
@@ -38,6 +39,7 @@ function getLocalPluginsDir(): string {
 export class PluginLoader {
   private plugins = new Map<string, LoadedPlugin>();
   private middlewareEntries: MiddlewareEntry[] = [];
+  private channels = new Map<string, Channel>();
   private registryFile: PluginRegistryFile = { version: 1, installed: {} };
   private globalDir: string;
   private localDir: string;
@@ -236,7 +238,32 @@ export class PluginLoader {
       }
     }
 
-    // 8. Call onStart lifecycle hook if plugin exports one
+    // 8. Register channels
+    if (parsed.channels && parsed.channels.length > 0) {
+      for (const chanEntry of parsed.channels) {
+        try {
+          const channel = mod[chanEntry.export] as Channel;
+          if (!channel || typeof channel.start !== "function") {
+            logger.warn(
+              `[PluginLoader] Channel "${chanEntry.name}" from "${parsed.name}" — export "${chanEntry.export}" is not a valid Channel`,
+            );
+            continue;
+          }
+
+          this.channels.set(chanEntry.name, channel);
+          plugin.registeredChannels.push(chanEntry.name);
+          logger.info(
+            `[PluginLoader] ✅ Registered channel "${chanEntry.name}" from plugin "${parsed.name}"`,
+          );
+        } catch (err: any) {
+          logger.error(
+            `[PluginLoader] Failed to register channel "${chanEntry.name}": ${err.message}`,
+          );
+        }
+      }
+    }
+
+    // 9. Call onStart lifecycle hook if plugin exports one
     if (typeof mod.onStart === "function") {
       try {
         await mod.onStart();
@@ -358,6 +385,15 @@ export class PluginLoader {
   // ── Get a specific plugin ───────────────────────────────────
   get(name: string): LoadedPlugin | undefined {
     return this.plugins.get(name);
+  }
+
+  // ── Get all loaded channels ─────────────────────────────────
+  getChannels(): Channel[] {
+    return Array.from(this.channels.values());
+  }
+
+  getChannel(name: string): Channel | undefined {
+    return this.channels.get(name);
   }
 
   // ── Plugin count ────────────────────────────────────────────

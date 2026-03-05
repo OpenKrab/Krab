@@ -2,7 +2,14 @@
 // 🦀 Krab — Enhanced Conversation Memory (OpenClaw-inspired)
 // ============================================================
 import type { Message } from "../core/types.js";
-import { existsSync, writeFileSync, readFileSync, mkdirSync, readdirSync, unlinkSync } from "fs";
+import {
+  existsSync,
+  writeFileSync,
+  readFileSync,
+  mkdirSync,
+  readdirSync,
+  unlinkSync,
+} from "fs";
 import { resolve } from "path";
 import { logger } from "../utils/logger.js";
 import { VectorMemory } from "./vector.js";
@@ -35,13 +42,18 @@ export class ConversationMemory {
   private readonly workspace: string;
   private readonly maxConversations: number;
   private readonly defaultLimit: number;
+  private vectorMemory: VectorMemory;
 
-  constructor(workspace: string, options: { maxConversations?: number; defaultLimit?: number } = {}) {
+  constructor(
+    workspace: string,
+    options: { maxConversations?: number; defaultLimit?: number } = {},
+  ) {
     this.workspace = resolve(workspace);
     this.maxConversations = options.maxConversations || 100;
     this.defaultLimit = options.defaultLimit || 50;
-    
+
     this.ensureWorkspace();
+    this.vectorMemory = new VectorMemory(resolve(this.workspace, "vectors"));
     this.loadConversations();
   }
 
@@ -82,7 +94,7 @@ export class ConversationMemory {
 
     const conversationsDir = resolve(this.workspace, "conversations");
     const filePath = resolve(conversationsDir, `${id}.json`);
-    
+
     try {
       writeFileSync(filePath, JSON.stringify(state, null, 2));
     } catch (error) {
@@ -97,42 +109,52 @@ export class ConversationMemory {
   private pruneOldConversations(): void {
     if (this.conversations.size <= this.maxConversations) return;
 
-    const sorted = Array.from(this.conversations.entries())
-      .sort(([, a], [, b]) => a.metadata.updatedAt.getTime() - b.metadata.updatedAt.getTime());
+    const sorted = Array.from(this.conversations.entries()).sort(
+      ([, a], [, b]) =>
+        a.metadata.updatedAt.getTime() - b.metadata.updatedAt.getTime(),
+    );
 
-    const toRemove = sorted.slice(0, this.conversations.size - this.maxConversations);
-    
+    const toRemove = sorted.slice(
+      0,
+      this.conversations.size - this.maxConversations,
+    );
+
     for (const [id] of toRemove) {
       this.conversations.delete(id);
       const filePath = resolve(this.workspace, "conversations", `${id}.json`);
       try {
         unlinkSync(filePath);
       } catch (error) {
-        logger.warn(`[Memory] Failed to delete conversation file ${id}:`, error);
+        logger.warn(
+          `[Memory] Failed to delete conversation file ${id}:`,
+          error,
+        );
       }
     }
 
     logger.info(`[Memory] Pruned ${toRemove.length} old conversations`);
   }
 
-  createConversation(options: Partial<ConversationMetadata> = {}): string {
-    const id = this.generateId();
+  createConversation(
+    options: Partial<ConversationMetadata> & { id?: string } = {},
+  ): string {
+    const id = options.id || this.generateId();
     const metadata: ConversationMetadata = {
       id,
       createdAt: new Date(),
       updatedAt: new Date(),
       messageCount: 0,
-      ...options
+      ...options,
     };
 
     this.conversations.set(id, {
       messages: [],
-      metadata
+      metadata,
     });
 
     this.pruneOldConversations();
     this.saveConversation(id);
-    
+
     logger.debug(`[Memory] Created conversation ${id}`);
     return id;
   }
@@ -159,22 +181,38 @@ export class ConversationMemory {
     this.saveConversation(conversationId);
   }
 
+  setMessages(conversationId: string, messages: Message[]): void {
+    let state = this.conversations.get(conversationId);
+    if (!state) {
+      this.createConversation({ id: conversationId });
+      state = this.conversations.get(conversationId)!;
+    }
+
+    state.messages = [...messages];
+    state.metadata.updatedAt = new Date();
+    state.metadata.messageCount = state.messages.length;
+
+    this.saveConversation(conversationId);
+  }
+
   private applyLimitPruning(state: ConversationState): void {
     if (state.messages.length <= this.defaultLimit) return;
 
-    const systemMessages = state.messages.filter(m => m.role === "system");
-    const nonSystem = state.messages.filter(m => m.role !== "system");
+    const systemMessages = state.messages.filter((m) => m.role === "system");
+    const nonSystem = state.messages.filter((m) => m.role !== "system");
     const trimmed = nonSystem.slice(-this.defaultLimit + systemMessages.length);
     state.messages = [...systemMessages, ...trimmed];
-    
-    logger.debug(`[Memory] Applied limit pruning: ${state.messages.length} messages`);
+
+    logger.debug(
+      `[Memory] Applied limit pruning: ${state.messages.length} messages`,
+    );
   }
 
   private applyContextPruning(state: ConversationState): void {
     if (!state.contextPruning) return;
 
     const { maxTokens, strategy } = state.contextPruning;
-    
+
     switch (strategy) {
       case "recent":
         this.applyRecentPruning(state, maxTokens);
@@ -188,12 +226,18 @@ export class ConversationMemory {
     }
   }
 
-  private applyRecentPruning(state: ConversationState, maxTokens: number): void {
+  private applyRecentPruning(
+    state: ConversationState,
+    maxTokens: number,
+  ): void {
     // Simple recent message pruning
     this.applyLimitPruning(state);
   }
 
-  private applySemanticPruning(state: ConversationState, maxTokens: number): void {
+  private applySemanticPruning(
+    state: ConversationState,
+    maxTokens: number,
+  ): void {
     // TODO: Implement semantic pruning using embeddings
     // For now, fall back to recent pruning
     this.applyRecentPruning(state, maxTokens);
@@ -210,8 +254,9 @@ export class ConversationMemory {
   }
 
   getAllConversations(): ConversationState[] {
-    return Array.from(this.conversations.values())
-      .sort((a, b) => b.metadata.updatedAt.getTime() - a.metadata.updatedAt.getTime());
+    return Array.from(this.conversations.values()).sort(
+      (a, b) => b.metadata.updatedAt.getTime() - a.metadata.updatedAt.getTime(),
+    );
   }
 
   getRecentMessages(conversationId: string, n: number): Message[] {
@@ -223,7 +268,7 @@ export class ConversationMemory {
     const state = this.conversations.get(conversationId);
     if (!state) return;
 
-    const systemMessages = state.messages.filter(m => m.role === "system");
+    const systemMessages = state.messages.filter((m) => m.role === "system");
     state.messages = systemMessages;
     state.metadata.updatedAt = new Date();
     state.metadata.messageCount = state.messages.length;
@@ -234,12 +279,19 @@ export class ConversationMemory {
 
   deleteConversation(conversationId: string): void {
     this.conversations.delete(conversationId);
-    const filePath = resolve(this.workspace, "conversations", `${conversationId}.json`);
+    const filePath = resolve(
+      this.workspace,
+      "conversations",
+      `${conversationId}.json`,
+    );
     try {
       unlinkSync(filePath);
       logger.info(`[Memory] Deleted conversation ${conversationId}`);
     } catch (error) {
-      logger.warn(`[Memory] Failed to delete conversation file ${conversationId}:`, error);
+      logger.warn(
+        `[Memory] Failed to delete conversation file ${conversationId}:`,
+        error,
+      );
     }
   }
 
@@ -257,7 +309,10 @@ export class ConversationMemory {
     return state?.summary;
   }
 
-  setContextPruning(conversationId: string, options: ConversationState["contextPruning"]): void {
+  setContextPruning(
+    conversationId: string,
+    options: ConversationState["contextPruning"],
+  ): void {
     const state = this.conversations.get(conversationId);
     if (!state) return;
 
@@ -274,32 +329,42 @@ export class ConversationMemory {
     newestConversation: Date | null;
   } {
     const conversations = this.getAllConversations();
-    const totalMessages = conversations.reduce((sum, conv) => sum + conv.metadata.messageCount, 0);
-    
-    const dates = conversations.map(c => c.metadata.createdAt);
-    const oldest = dates.length > 0 ? new Date(Math.min(...dates.map(d => d.getTime()))) : null;
-    const newest = dates.length > 0 ? new Date(Math.max(...dates.map(d => d.getTime()))) : null;
+    const totalMessages = conversations.reduce(
+      (sum, conv) => sum + conv.metadata.messageCount,
+      0,
+    );
+
+    const dates = conversations.map((c) => c.metadata.createdAt);
+    const oldest =
+      dates.length > 0
+        ? new Date(Math.min(...dates.map((d) => d.getTime())))
+        : null;
+    const newest =
+      dates.length > 0
+        ? new Date(Math.max(...dates.map((d) => d.getTime())))
+        : null;
 
     return {
       totalConversations: conversations.length,
       totalMessages,
-      averageMessagesPerConversation: conversations.length > 0 ? totalMessages / conversations.length : 0,
+      averageMessagesPerConversation:
+        conversations.length > 0 ? totalMessages / conversations.length : 0,
       oldestConversation: oldest,
-      newestConversation: newest
+      newestConversation: newest,
     };
   }
 
   searchConversations(query: string): ConversationState[] {
     const lowerQuery = query.toLowerCase();
-    return this.getAllConversations().filter(conv => {
+    return this.getAllConversations().filter((conv) => {
       // Search in messages
-      const messageMatch = conv.messages.some(msg => 
-        msg.content.toLowerCase().includes(lowerQuery)
+      const messageMatch = conv.messages.some((msg) =>
+        msg.content.toLowerCase().includes(lowerQuery),
       );
-      
+
       // Search in summary
       const summaryMatch = conv.summary?.toLowerCase().includes(lowerQuery);
-      
+
       return messageMatch || summaryMatch;
     });
   }
@@ -312,10 +377,12 @@ export class ConversationMemory {
     } catch (error) {
       logger.warn(`[Memory] Semantic search failed: ${error}`);
       // Fallback to text search
-      return this.searchConversations(query).slice(0, limit).map(conv => ({
-        conversation: conv,
-        score: 0.5
-      }));
+      return this.searchConversations(query)
+        .slice(0, limit)
+        .map((conv) => ({
+          conversation: conv,
+          score: 0.5,
+        }));
     }
   }
 
@@ -330,9 +397,17 @@ export class ConversationMemory {
   }
 
   // Search within a specific conversation
-  async searchConversation(conversationId: string, query: string, limit: number = 10): Promise<any[]> {
+  async searchConversation(
+    conversationId: string,
+    query: string,
+    limit: number = 10,
+  ): Promise<any[]> {
     try {
-      return await this.vectorMemory.searchByConversation(conversationId, query, limit);
+      return await this.vectorMemory.searchByConversation(
+        conversationId,
+        query,
+        limit,
+      );
     } catch (error) {
       logger.warn(`[Memory] Conversation search failed: ${error}`);
       return [];
@@ -367,5 +442,9 @@ export class ConversationMemory {
   getAll(): Message[] {
     const conv = this.getConversation(this.defaultConversationId);
     return conv?.messages || [];
+  }
+
+  setAll(messages: Message[]): void {
+    this.setMessages(this.defaultConversationId, messages);
   }
 }

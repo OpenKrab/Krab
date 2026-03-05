@@ -120,6 +120,48 @@ export interface MiddlewareEntry {
   pluginName: string;
 }
 
+// ── Channel Types ───────────────────────────────────────────
+/** A message received from a channel (Telegram, WA, etc.) */
+export interface ChannelMessage {
+  id: string;
+  sessionId: string;
+  sender: {
+    id: string;
+    name?: string;
+    handle?: string;
+  };
+  content: string;
+  timestamp: Date;
+  metadata?: Record<string, any>;
+}
+
+/** A response to be sent back through a channel */
+export interface ChannelResponse {
+  content: string;
+  media?: {
+    type: "image" | "audio" | "document" | "video";
+    url: string;
+    filename?: string;
+    caption?: string;
+  }[];
+}
+
+/** Interface for building communication platform plugins */
+export interface Channel {
+  name: string;
+  platform: string;
+  /** Initialize and start the connection (e.g., connect to Telegram API) */
+  start: (config: Record<string, any>) => Promise<void>;
+  /** Stop the connection */
+  stop: () => Promise<void>;
+  /** Register a callback for incoming messages */
+  onMessage: (
+    handler: (msg: ChannelMessage) => Promise<ChannelResponse | void>,
+  ) => void;
+  /** Proactively send a message to a specific target */
+  sendMessage: (targetId: string, response: ChannelResponse) => Promise<void>;
+}
+
 // ── Plugin Registry File ────────────────────────────────────
 export interface PluginRegistryEntry {
   version: string;
