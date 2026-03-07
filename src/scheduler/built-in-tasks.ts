@@ -37,7 +37,7 @@ export class BuiltInTasks {
   }
 
   private createNewsFetchTask(): void {
-    const task: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt'> = {
+    const task: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt' | 'schedule'> = {
       name: 'News Aggregation',
       description: 'Fetch latest news and AI developments from various sources',
       cronExpression: '0 */2 * * *', // Every 2 hours
@@ -54,7 +54,7 @@ export class BuiltInTasks {
   }
 
   private createSystemMonitoringTask(): void {
-    const task: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt'> = {
+    const task: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt' | 'schedule'> = {
       name: 'System Monitoring',
       description: 'Monitor system resources, performance, and health metrics',
       cronExpression: '*/10 * * * *', // Every 10 minutes
@@ -71,7 +71,7 @@ export class BuiltInTasks {
   }
 
   private createDataCleanupTask(): void {
-    const task: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt'> = {
+    const task: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt' | 'schedule'> = {
       name: 'Data Cleanup',
       description: 'Clean up temporary files, old logs, and cache data',
       cronExpression: '0 2 * * *', // Daily at 2 AM
@@ -88,7 +88,7 @@ export class BuiltInTasks {
   }
 
   private createBackupTask(): void {
-    const task: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt'> = {
+    const task: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt' | 'schedule'> = {
       name: 'Database Backup',
       description: 'Create backup of databases and critical data',
       cronExpression: '0 3 * * *', // Daily at 3 AM
@@ -105,7 +105,7 @@ export class BuiltInTasks {
   }
 
   private createAnalyticsReportTask(): void {
-    const task: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt'> = {
+    const task: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt' | 'schedule'> = {
       name: 'Analytics Report',
       description: 'Generate and send weekly analytics reports',
       cronExpression: '0 9 * * 1', // Every Monday at 9 AM
@@ -122,7 +122,7 @@ export class BuiltInTasks {
   }
 
   private createHealthCheckTask(): void {
-    const task: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt'> = {
+    const task: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt' | 'schedule'> = {
       name: 'Service Health Check',
       description: 'Check health of all Krab services and integrations',
       cronExpression: '*/30 * * * *', // Every 30 minutes
@@ -140,7 +140,7 @@ export class BuiltInTasks {
 
   // Additional utility tasks that can be enabled as needed
   addCustomNewsSource(name: string, url: string, schedule: string = '0 */4 * * *'): void {
-    const task: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt'> = {
+    const task: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt' | 'schedule'> = {
       name: `News: ${name}`,
       description: `Fetch news from ${url}`,
       cronExpression: schedule,
@@ -159,7 +159,7 @@ export class BuiltInTasks {
   }
 
   addMonitoringAlert(metric: string, threshold: number, schedule: string = '*/5 * * * *'): void {
-    const task: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt'> = {
+    const task: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt' | 'schedule'> = {
       name: `Monitor: ${metric}`,
       description: `Monitor ${metric} and alert if above ${threshold}`,
       cronExpression: schedule,
@@ -178,7 +178,7 @@ export class BuiltInTasks {
   }
 
   addDatabaseMaintenance(schedule: string = '0 4 * * 0'): void {
-    const task: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt'> = {
+    const task: Omit<ScheduledTask, 'id' | 'createdAt' | 'updatedAt' | 'schedule'> = {
       name: 'Database Maintenance',
       description: 'Perform database optimization and maintenance tasks',
       cronExpression: schedule,

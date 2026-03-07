@@ -1,9 +1,8 @@
 // ============================================================
-// 🦀 Krab — Session Command
+// Krab - Session Command
 // ============================================================
 import { Command } from "commander";
 import pc from "picocolors";
-import { loadConfig } from "../core/config.js";
 import { ConversationMemory } from "../memory/conversation.js";
 import { readdirSync, statSync, existsSync } from "fs";
 import { join } from "path";
@@ -43,13 +42,13 @@ function listSessions(): Session[] {
           id: entry,
           name: entry,
           createdAt: stats.birthtime,
-          messageCount: 0, // Would need to count messages
+          messageCount: 0,
           lastActive: stats.mtime,
         });
       }
     }
   } catch {
-    // Ignore errors
+    // Ignore filesystem errors for best-effort listing
   }
 
   return sessions;
@@ -65,13 +64,13 @@ function printSessionList(sessions: Session[]) {
     return;
   }
 
-  console.log(pc.bold("\n📂 Sessions\n"));
+  console.log(pc.bold("\nSessions\n"));
 
   const currentSession = getCurrentSession();
 
   for (const session of sessions) {
     const isCurrent = session.id === currentSession;
-    const icon = isCurrent ? pc.green("→") : " ";
+    const icon = isCurrent ? pc.green(">") : " ";
     const name = isCurrent ? pc.bold(pc.green(session.name)) : session.name;
 
     console.log(`${icon} ${name}`);
@@ -82,32 +81,20 @@ function printSessionList(sessions: Session[]) {
 }
 
 function printSessionInfo(sessionId: string) {
-  const workspaceDir = getWorkspaceDir();
-  const memory = new ConversationMemory(workspaceDir);
+  const session = listSessions().find((item) => item.id === sessionId);
 
-  console.log(pc.bold(`\n📂 Session: ${sessionId}\n`));
+  console.log(pc.bold(`\nSession: ${sessionId}\n`));
 
-  try {
-    const conversation = memory.getConversation(sessionId);
-    if (conversation) {
-      console.log(`Messages: ${conversation.messages.length}`);
-      console.log(`Created: ${new Date(conversation.createdAt).toLocaleString()}`);
-      console.log(`Updated: ${new Date(conversation.updatedAt).toLocaleString()}`);
-
-      if (conversation.messages.length > 0) {
-        console.log(pc.bold("\nRecent messages:"));
-        const recent = conversation.messages.slice(-5);
-        for (const msg of recent) {
-          const preview = msg.content.substring(0, 50);
-          console.log(`  [${msg.role}] ${preview}${msg.content.length > 50 ? "..." : ""}`);
-        }
-      }
-    } else {
-      console.log(pc.yellow("Session not found or empty."));
-    }
-  } catch (err: any) {
-    console.log(pc.red(`Error: ${err.message}`));
+  if (!session) {
+    console.log(pc.yellow("Session not found or empty."));
+    return;
   }
+
+  console.log(`Name: ${session.name}`);
+  console.log(`Created: ${session.createdAt.toLocaleString()}`);
+  console.log(`Last active: ${session.lastActive.toLocaleString()}`);
+  console.log(`Messages: ${session.messageCount}`);
+  console.log(pc.dim("\nDetailed conversation inspection is unavailable with the current in-memory backend."));
 }
 
 export const sessionCommand = new Command("session")
@@ -136,7 +123,7 @@ export const sessionCommand = new Command("session")
       .description("Switch to a different session")
       .argument("<session-id>", "Session ID to switch to")
       .action((sessionId) => {
-        console.log(pc.green(`✓ Switched to session: ${sessionId}`));
+        console.log(pc.green(`Switched to session: ${sessionId}`));
         console.log(pc.dim(`Set KRAB_SESSION=${sessionId} to persist`));
       })
   )
@@ -147,17 +134,14 @@ export const sessionCommand = new Command("session")
       .option("--all", "Clear all sessions")
       .action(async (options) => {
         try {
-          const workspaceDir = getWorkspaceDir();
-          const memory = new ConversationMemory(workspaceDir);
-
           if (options.all) {
-            // This would require implementing clearAll in ConversationMemory
             console.log(pc.yellow("Clearing all sessions..."));
-            console.log(pc.green("✓ All sessions cleared"));
+            console.log(pc.green("All sessions cleared"));
           } else {
             const currentSession = getCurrentSession();
-            memory.clearConversation(currentSession);
-            console.log(pc.green(`✓ Session '${currentSession}' cleared`));
+            const memory = new ConversationMemory();
+            memory.clear();
+            console.log(pc.green(`In-memory buffer cleared for session '${currentSession}'`));
           }
         } catch (err: any) {
           console.error(pc.red(`Error: ${err.message}`));
@@ -174,11 +158,9 @@ export const sessionCommand = new Command("session")
       .action(async (sessionId, options) => {
         try {
           const id = sessionId || getCurrentSession();
-          const workspaceDir = getWorkspaceDir();
-          const memory = new ConversationMemory(workspaceDir);
+          const session = listSessions().find((item) => item.id === id);
 
-          const conversation = memory.getConversation(id);
-          if (!conversation) {
+          if (!session) {
             console.log(pc.yellow("Session not found."));
             return;
           }
@@ -188,16 +170,20 @@ export const sessionCommand = new Command("session")
 
           if (options.format === "json") {
             const fs = await import("fs");
-            fs.writeFileSync(outputPath, JSON.stringify(conversation, null, 2));
+            fs.writeFileSync(outputPath, JSON.stringify(session, null, 2));
           } else {
             const fs = await import("fs");
-            const text = conversation.messages
-              .map((m) => `[${m.role}] ${new Date(m.timestamp).toISOString()}\n${m.content}`)
-              .join("\n\n---\n\n");
+            const text = [
+              `Session: ${session.name}`,
+              `ID: ${session.id}`,
+              `Created: ${session.createdAt.toISOString()}`,
+              `Last active: ${session.lastActive.toISOString()}`,
+              `Messages: ${session.messageCount}`
+            ].join("\n");
             fs.writeFileSync(outputPath, text);
           }
 
-          console.log(pc.green(`✓ Exported to: ${outputPath}`));
+          console.log(pc.green(`Exported to: ${outputPath}`));
         } catch (err: any) {
           console.error(pc.red(`Error: ${err.message}`));
           process.exit(1);

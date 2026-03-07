@@ -14,13 +14,15 @@ export {
 
 // Re-export types
 export type { 
-  ComputerToolOptions, 
   ComputerAction, 
   MouseAction, 
   KeyboardAction, 
   ScreenshotAction, 
   WindowAction 
 } from './interface.js';
+export type {
+  ComputerToolOptions
+} from './tools.js';
 
 export type { 
   VisionAnalysis, 

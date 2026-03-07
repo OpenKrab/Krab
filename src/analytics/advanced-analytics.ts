@@ -166,7 +166,7 @@ export interface AlertConfig {
 
 export class AdvancedAnalytics {
   private traces: Map<string, TraceSpan> = new Map();
-  private metrics: Map<string, PerformanceMetrics> = new Map();
+  private metrics: PerformanceMetrics[] = [];
   private alerts: Map<string, AlertConfig> = new Map();
   private vercelTraces: VercelTrace[] = [];
   private debugEntries: DebugConsoleEntry[] = [];

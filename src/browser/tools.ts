@@ -34,6 +34,8 @@ export class BrowserTools {
   async executeTool(options: BrowserToolOptions): Promise<ToolResult> {
     try {
       logger.info(`[BrowserTools] Executing: ${options.action} on session ${options.sessionId}`);
+      let screenshotPath: string | undefined;
+      let content: any;
 
       switch (options.action) {
         case 'navigate':
@@ -66,7 +68,7 @@ export class BrowserTools {
           break;
 
         case 'screenshot':
-          const screenshotPath = await this.sessionManager.takeScreenshot(options.sessionId, {
+          screenshotPath = await this.sessionManager.takeScreenshot(options.sessionId, {
             fullPage: options.fullPage,
             selector: options.selector
           });
@@ -76,7 +78,7 @@ export class BrowserTools {
           if (!options.extractOptions) {
             throw new Error('Extract options are required for extract action');
           }
-          const content = await this.sessionManager.extractContent(options.sessionId, options.extractOptions);
+          content = await this.sessionManager.extractContent(options.sessionId, options.extractOptions);
           break;
 
         case 'close':
@@ -93,10 +95,7 @@ export class BrowserTools {
           action: options.action,
           sessionId: options.sessionId,
           timestamp: new Date().toISOString(),
-          ...(options.action === 'screenshot' && { screenshotPath: (await this.sessionManager.takeScreenshot(options.sessionId, {
-            fullPage: options.fullPage,
-            selector: options.selector
-          })) }),
+          ...(options.action === 'screenshot' && { screenshotPath }),
           ...(options.action === 'extract' && { content })
         }, null, 2)
       };
@@ -147,6 +146,10 @@ export class BrowserTools {
         error: `Failed to list sessions: ${(error as Error).message}`
       };
     }
+  }
+
+  async closeSession(sessionId: string): Promise<void> {
+    await this.sessionManager.closeSession(sessionId);
   }
 
   async getSessionInfo(sessionId: string): Promise<ToolResult> {
@@ -251,7 +254,7 @@ export const browserSessionTool: Tool = {
           return await browserTools.getSessionInfo(args.sessionId);
 
         case 'close':
-          await browserTools.sessionManager.closeSession(args.sessionId);
+          await browserTools.closeSession(args.sessionId);
           return {
             success: true,
             output: JSON.stringify({

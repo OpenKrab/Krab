@@ -630,5 +630,3 @@ export class ObsidianKnowledgeBase {
     this.reader.close();
   }
 }
-
-export { ObsidianVaultReader, ObsidianNoteWriter };

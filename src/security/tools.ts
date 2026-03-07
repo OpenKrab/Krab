@@ -290,7 +290,7 @@ export const securityManagementTool: Tool = {
     token: z.string().optional().describe("Token for validation"),
     tokenType: z.enum(["access", "refresh", "api_key"]).optional().describe("Type of token to generate"),
     toolName: z.string().optional().describe("Tool name for approval"),
-    parameters: z.record(z.any()).optional().describe("Tool parameters for approval"),
+    parameters: z.record(z.string(), z.any()).optional().describe("Tool parameters for approval"),
     reason: z.string().optional().describe("Reason for approval/rejection"),
     requestId: z.string().optional().describe("Approval request ID"),
     scope: z.enum(["user", "ip", "global"]).optional().describe("Scope for rate limiting/cost control"),
@@ -403,9 +403,9 @@ export const auditTool: Tool = {
   name: "audit",
   description: "Security audit logging and compliance monitoring for all system activities.",
   parameters: z.object({
-    action: z.enum(["logs", "search", "export", "stats"]).describe("Audit action"),
+    mode: z.enum(["logs", "search", "export", "stats"]).describe("Audit action"),
     userId: z.string().optional().describe("Filter by user ID"),
-    action: z.string().optional().describe("Filter by action"),
+    actionFilter: z.string().optional().describe("Filter by action"),
     limit: z.number().optional().describe("Number of logs to retrieve"),
     startDate: z.string().optional().describe("Start date for filtering"),
     endDate: z.string().optional().describe("End date for filtering"),
@@ -417,11 +417,11 @@ export const auditTool: Tool = {
     const manager = securityTools.getSecurityManager();
 
     try {
-      switch (args.action) {
+      switch (args.mode) {
         case 'logs':
           const logs = manager.getAuditLogs(
             args.userId,
-            args.action,
+            args.actionFilter,
             args.limit || 100,
             args.startDate ? new Date(args.startDate) : undefined,
             args.endDate ? new Date(args.endDate) : undefined
@@ -448,7 +448,7 @@ export const auditTool: Tool = {
           // Enhanced search would be implemented here
           const searchResults = manager.getAuditLogs(
             args.userId,
-            args.action,
+            args.actionFilter,
             args.limit || 50,
             args.startDate ? new Date(args.startDate) : undefined,
             args.endDate ? new Date(args.endDate) : undefined
@@ -461,7 +461,7 @@ export const auditTool: Tool = {
         case 'export':
           const exportLogs = manager.getAuditLogs(
             args.userId,
-            args.action,
+            args.actionFilter,
             1000, // Export more logs
             args.startDate ? new Date(args.startDate) : undefined,
             args.endDate ? new Date(args.endDate) : undefined
@@ -511,7 +511,7 @@ export const auditTool: Tool = {
           };
 
         default:
-          throw new Error(`Unknown audit action: ${args.action}`);
+          throw new Error(`Unknown audit action: ${args.mode}`);
       }
 
     } catch (error) {

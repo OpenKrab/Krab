@@ -5,6 +5,9 @@ import { generateStructured, generateTextResponse } from "../providers/llm.js";
 import { executeToolCalls } from "../tools/executor.js";
 import { registry } from "../tools/registry.js";
 import { ConversationMemory } from "../memory/conversation-enhanced.js";
+import { sessionStore } from "../session/store.js";
+import { SessionPruner } from "../session/pruning.js";
+import { memoryManager } from "../memory/manager.js";
 import {
   Reflector,
   shouldRetryBasedOnQuality,
@@ -13,9 +16,7 @@ import {
 import { logger } from "../utils/logger.js";
 import type { KrabConfig, Message, Role } from "./types.js";
 import pc from "picocolors";
-import { readFileSync } from "fs";
-import { resolve } from "path";
-import { fileURLToPath } from "url";
+import { hooksManager } from "../hooks/index.js";
 
 const __dirname = resolve(fileURLToPath(new URL(".", import.meta.url)));
 const PROMPTS_PATH = resolve(__dirname, "prompts.json");
@@ -36,6 +37,8 @@ export class Agent {
   private config: KrabConfig;
   private memory: ConversationMemory;
   private reflector: Reflector;
+  private pruner: SessionPruner;
+  private cachedMemory: string | null = null;
   private iterationCount = 0;
 
   constructor(config: KrabConfig) {
@@ -43,6 +46,13 @@ export class Agent {
     const workspace = config.agents?.defaults?.workspace || "~/.krab/workspace";
     this.memory = new ConversationMemory(workspace);
     this.reflector = new Reflector(config, config.reflector);
+    this.pruner = new SessionPruner({
+      enabled: config.agents?.defaults?.sessionPruning?.enabled ?? false,
+      mode: config.agents?.defaults?.sessionPruning?.mode ?? "cache-ttl",
+      ttl: config.agents?.defaults?.sessionPruning?.ttl ?? "5m",
+      keepLastAssistants: config.agents?.defaults?.sessionPruning?.keepLastAssistants ?? 3,
+      contextWindowEstimation: config.agents?.defaults?.sessionPruning?.contextWindowEstimation ?? 200000
+    });
   }
   // ── Main entry point ───────────────────────────────────────
   async chat(
@@ -53,6 +63,18 @@ export class Agent {
     },
   ): Promise<string> {
     const conversationId = options?.conversationId || "default";
+
+    // Update session metadata
+    sessionStore.incrementMessageCount(conversationId);
+
+    // Fire hooks: user message event
+    await hooksManager.fireEvent({
+      type: "message:user",
+      data: { content: userInput, conversationId },
+      timestamp: new Date(),
+      sessionId: conversationId
+    });
+
     this.memory.addMessage(conversationId, {
       role: "user",
       content: userInput,
@@ -64,6 +86,17 @@ export class Agent {
 
     try {
       const response = await this.reactLoop(conversationId);
+
+      // Update session for assistant response
+      sessionStore.incrementMessageCount(conversationId);
+
+      // Fire hooks: assistant response event
+      await hooksManager.fireEvent({
+        type: "message:assistant",
+        data: { content: response, conversationId },
+        timestamp: new Date(),
+        sessionId: conversationId
+      });
 
       // Reflection step
       if (this.config.reflector?.enabled) {
@@ -136,16 +169,27 @@ export class Agent {
 
   // ── Context Retrieval ───────────────────────────────────────
   private getEnhancedSystemPrompt(conversationId: string): string {
-    const summary =
-      this.memory.getSummary(conversationId) || "No previous summary.";
+    const summary = this.memory.getSummary(conversationId) || "No previous summary.";
     const toolsText = registry
       .getAll()
       .map((t) => `- ${t.name}: ${t.description}`)
       .join("\n");
 
+    // Load memory content for main sessions
+    let memoryContent = "";
+    if (conversationId === "main" || conversationId.startsWith("dm-main")) {
+      if (this.cachedMemory === null) {
+        // Load memory once and cache
+        const dailyMemory = memoryManager.readDailyMemory();
+        const longTermMemory = memoryManager.readLongTermMemory();
+        this.cachedMemory = [dailyMemory, longTermMemory].filter(Boolean).join("\n\n");
+      }
+      memoryContent = this.cachedMemory;
+    }
+
     return SYSTEM_PROMPT.replace("{tools}", toolsText)
-      .replace("{maxRetries}", (this.config.maxRetries || 3).toString())
-      .replace("{memorySummary}", summary);
+      .replace("{memorySummary}", summary)
+      .replace("{memory}", memoryContent || "No memory content available.");
   }
 
   private async summarizeIfNeeded(conversationId: string): Promise<void> {
@@ -220,7 +264,14 @@ export class Agent {
       // 1. THINK — Generate structured output
       let output;
       const systemPrompt = this.getEnhancedSystemPrompt(conversationId);
-      const messages = this.memory.getRecentMessages(conversationId, 20);
+      let messages = this.memory.getRecentMessages(conversationId, 20);
+
+      // Apply session pruning if enabled
+      const pruningResult = this.pruner.pruneMessages(conversationId, messages);
+      if (pruningResult.prunedCount > 0) {
+        logger.debug(`[Agent] Pruned ${pruningResult.prunedCount} tool results from session ${conversationId}`);
+        messages = pruningResult.messages;
+      }
 
       // Ensure system prompt is at the top
       const llmMessages = [

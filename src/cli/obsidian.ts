@@ -7,7 +7,10 @@
 import { Command } from "commander";
 import { logger } from "../utils/logger.js";
 import { loadConfig } from "../core/krab-config.js";
-import { ObsidianAIKnowledgeBase } from '../obsidian/knowledge-base.js';
+import {
+  ObsidianAIKnowledgeBase,
+  type ObsidianNote,
+} from "../obsidian/knowledge-base.js";
 import pc from "picocolors";
 
 // Global knowledge base instance

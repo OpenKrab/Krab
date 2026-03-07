@@ -1,13 +1,81 @@
 // ============================================================
 // 🦀 Krab — Channel Registry (OpenClaw-inspired)
 // ============================================================
-import { ChannelFactory, ChannelManager } from "./base.js";
+import { ChannelFactory, ChannelManager, ChannelCapabilities, DEFAULT_CAPABILITIES } from "./base.js";
 import { TelegramChannel, registerTelegramChannel } from "./telegram.js";
 import { LINEChannel, registerLINEChannel } from "./line.js";
 import { WhatsAppChannel, registerWhatsAppChannel } from "./whatsapp.js";
 import { DiscordChannel, registerDiscordChannel } from "./discord.js";
 import { logger } from "../utils/logger.js";
 import type { ChannelConfig } from "./base.js";
+
+// ── Channel Capabilities Map ────────────────────────────────────
+export const CHANNEL_CAPABILITIES: Record<string, ChannelCapabilities> = {
+  telegram: {
+    polls: true,
+    reactions: true,
+    edit: false,
+    unsend: false,
+    reply: true,
+    effects: true,
+    groupManagement: true,
+    threads: true,
+    media: true,
+    nativeCommands: true,
+    buttons: true,
+    carousels: true,
+    voiceMessages: true,
+  },
+  discord: {
+    polls: true,
+    reactions: true,
+    edit: true,
+    unsend: true,
+    reply: true,
+    effects: true,
+    groupManagement: true,
+    threads: true,
+    media: true,
+    nativeCommands: true,
+    buttons: true,
+    carousels: true,
+    voiceMessages: true,
+  },
+  line: {
+    polls: false,
+    reactions: true,
+    edit: false,
+    unsend: false,
+    reply: true,
+    effects: false,
+    groupManagement: false,
+    threads: false,
+    media: true,
+    nativeCommands: false,
+    buttons: true,
+    carousels: true,
+    voiceMessages: true,
+  },
+  whatsapp: {
+    polls: false,
+    reactions: true,
+    edit: false,
+    unsend: false,
+    reply: true,
+    effects: false,
+    groupManagement: false,
+    threads: false,
+    media: true,
+    nativeCommands: false,
+    buttons: false,
+    carousels: false,
+    voiceMessages: true,
+  },
+};
+
+export function getChannelCapabilities(channelName: string): ChannelCapabilities {
+  return CHANNEL_CAPABILITIES[channelName.toLowerCase()] || DEFAULT_CAPABILITIES;
+}
 
 // ── Channel Registry ────────────────────────────────────────────
 export class ChannelRegistry {

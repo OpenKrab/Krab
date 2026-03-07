@@ -17,6 +17,7 @@ import { loadConfig, saveConfig } from "../core/krab-config.js";
 import { GatewayServer } from "../gateway/server.js";
 import { MCPServer, createMCPServer } from "../mcp/server.js";
 import { MCPClient, createMCPClient } from "../mcp/client.js";
+import { pluginLoader } from "../plugins/loader.js";
 import * as CronStuff from "../scheduler/cron.js";
 import { CronScheduler } from "../scheduler/cron.js";
 const { createScheduler, jobTemplates } = CronStuff as any;
@@ -609,11 +610,82 @@ async function manageConfig(key?: string, value?: string): Promise<void> {
 
 async function checkChannelStatus(options: any): Promise<void> {
   console.log(pc.cyan("📡 Channel Status:"));
-  console.log(pc.dim("   (Channel status checking not implemented yet)"));
 
-  if (options.probe) {
-    console.log(pc.dim("   Probing channel readiness..."));
+  const loadedPlugins = pluginLoader.list();
+  const loadedChannels = pluginLoader.getChannels();
+  const discovered = await pluginLoader.discover().catch(() => []);
+  const config = loadConfig() as any;
+  const channelConfig = config.channels || {};
+
+  const knownChannels = [
+    {
+      name: "telegram",
+      envKeys: ["TELEGRAM_BOT_TOKEN"],
+    },
+    {
+      name: "discord",
+      envKeys: ["DISCORD_BOT_TOKEN"],
+    },
+    {
+      name: "whatsapp",
+      envKeys: ["WHATSAPP_ACCESS_TOKEN", "WHATSAPP_PHONE_NUMBER_ID"],
+    },
+    {
+      name: "line",
+      envKeys: ["LINE_CHANNEL_ACCESS_TOKEN", "LINE_CHANNEL_SECRET"],
+    },
+    {
+      name: "signal",
+      envKeys: ["SIGNAL_API_TOKEN", "SIGNAL_ACCOUNT"],
+    },
+    {
+      name: "imessage",
+      envKeys: ["IMESSAGE_API_URL", "IMESSAGE_API_TOKEN"],
+    },
+  ];
+
+  const discoveredChannels = new Set<string>();
+  for (const item of discovered) {
+    for (const ch of item.manifest.channels || []) {
+      discoveredChannels.add(ch.name);
+    }
   }
+
+  for (const known of knownChannels) {
+    const fromConfig = channelConfig[known.name];
+    const hasConfig = Boolean(fromConfig);
+    const enabled = fromConfig?.enabled !== false && hasConfig;
+    const envReady = known.envKeys.every((k) => Boolean(process.env[k]));
+    const loaded = loadedChannels.some((c) => c.name === known.name);
+    const discoveredPlugin = discoveredChannels.has(known.name);
+
+    const status = loaded
+      ? pc.green("running")
+      : enabled && envReady
+        ? pc.yellow("ready")
+        : hasConfig
+          ? pc.yellow("partial")
+          : pc.dim("not-configured");
+
+    console.log(
+      `  ${known.name.padEnd(10)} ${status}  config=${hasConfig ? "yes" : "no"} env=${envReady ? "ok" : "missing"} plugin=${discoveredPlugin ? "yes" : "no"}`,
+    );
+
+    if (options.probe && !envReady) {
+      const missing = known.envKeys.filter((k) => !process.env[k]);
+      if (missing.length > 0) {
+        console.log(pc.dim(`    missing env: ${missing.join(", ")}`));
+      }
+    }
+  }
+
+  const stats = pluginLoader.count();
+  console.log();
+  console.log(
+    pc.dim(
+      `Plugins loaded=${stats.loaded}, error=${stats.error}, disabled=${stats.disabled}, total=${loadedPlugins.length}`,
+    ),
+  );
 }
 
 // ── MCP Command Implementations ─────────────────────────────

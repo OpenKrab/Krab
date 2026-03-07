@@ -77,9 +77,7 @@ export class BrowserFormAutomation {
           case 'file':
             const fileInput = await session.page.$(field.selector);
             if (fileInput) {
-              // Handle file upload
-              const fileContent = Buffer.from(field.value);
-              await fileInput.setInputFiles([fileContent]);
+              await fileInput.setInputFiles(field.value);
             }
             break;
         }
@@ -154,8 +152,7 @@ export class BrowserFormAutomation {
       const fileInput = await session.page.$(selector);
       
       if (fileInput) {
-        const fileContent = Buffer.from(filePath);
-        await fileInput.setInputFiles([fileContent]);
+        await fileInput.setInputFiles(filePath);
       }
       
       session.lastActivity = new Date();
@@ -179,7 +176,27 @@ export class BrowserFormAutomation {
       await session.page.waitForSelector(formSelector, { timeout: 5000 });
       
       const fields = await session.page.evaluate((formSelector) => {
-        const form = document.querySelector(formSelector);
+        const doc = (globalThis as any).document;
+        const getSelector = (element: any): string => {
+          if (element.id) return `#${element.id}`;
+          if (element.name) return `[name="${element.name}"]`;
+          if (element.className) return `.${String(element.className).split(' ')[0]}`;
+          return String(element.tagName).toLowerCase();
+        };
+        const getFieldType = (element: any): FormField['type'] => {
+          const tagName = String(element.tagName).toLowerCase();
+          const inputType = element.type?.toLowerCase();
+          if (tagName === 'input') {
+            if (['text', 'password', 'email', 'search', 'tel'].includes(inputType)) return 'text';
+            if (inputType === 'checkbox') return 'checkbox';
+            if (inputType === 'radio') return 'radio';
+            if (inputType === 'file') return 'file';
+          }
+          if (tagName === 'textarea') return 'text';
+          if (tagName === 'select') return 'select';
+          return 'text';
+        };
+        const form = doc.querySelector(formSelector);
         if (!form) return [];
 
         const inputs = form.querySelectorAll('input, select, textarea, input[type="checkbox"], input[type="radio"]');
@@ -187,9 +204,9 @@ export class BrowserFormAutomation {
 
         inputs.forEach((input: any) => {
           const field: FormField = {
-            selector: this.getSelector(input),
+            selector: getSelector(input),
             value: input.value || input.textContent || '',
-            type: this.getFieldType(input),
+            type: getFieldType(input),
             options: input.options ? Array.from(input.options).map((opt: any) => opt.value) : undefined
           };
 
@@ -270,6 +287,7 @@ export const browserFormTool: Tool = {
 
   async execute(args: any): Promise<ToolResult> {
     const formAutomation = new BrowserFormAutomation();
+    let extractedFields: FormField[] | undefined;
     
     try {
       switch (args.action) {
@@ -302,7 +320,7 @@ export const browserFormTool: Tool = {
           if (!args.formSelector) {
             throw new Error('Form selector is required for extract_form action');
           }
-          const fields = await formAutomation.extractFormData(args.sessionId, args.formSelector);
+          extractedFields = await formAutomation.extractFormData(args.sessionId, args.formSelector);
           break;
 
         default:
@@ -315,7 +333,7 @@ export const browserFormTool: Tool = {
           action: args.action,
           sessionId: args.sessionId,
           timestamp: new Date().toISOString(),
-          ...(args.action === 'extract_form' && { fields })
+          ...(args.action === 'extract_form' && { fields: extractedFields })
         }, null, 2)
       };
 

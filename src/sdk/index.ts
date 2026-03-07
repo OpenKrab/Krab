@@ -56,22 +56,26 @@ export interface SDKResponse<T = any> {
 
 export class KrabSDK {
   private client: KrabCloudClient;
-  private config: Required<KrabSDKConfig>;
+  private config: KrabSDKConfig;
   private agents: Map<string, AgentConfig> = new Map();
   private activeConversations: Map<string, any> = new Map();
 
   constructor(config: KrabSDKConfig = {}) {
     this.config = {
+      apiUrl: config.apiUrl ?? 'https://api.krab.ai',
+      websocketUrl: config.websocketUrl ?? 'wss://api.krab.ai',
+      apiKey: config.apiKey ?? process.env.KRAB_API_KEY ?? '',
+      retryAttempts: config.retryAttempts ?? 5,
+      retryDelay: config.retryDelay ?? 1000,
       autoConnect: config.autoConnect ?? true,
       retryOnFailure: config.retryOnFailure ?? true,
       timeout: config.timeout ?? 30000,
       maxRetries: config.maxRetries ?? 3,
       enableLogging: config.enableLogging ?? false,
       customLogger: config.customLogger,
-      ...config
     };
 
-    this.client = new KrabCloudClient(config);
+    this.client = new KrabCloudClient(this.config);
 
     if (this.config.enableLogging) {
       this.setupLogging();
@@ -165,7 +169,7 @@ export class KrabSDK {
   }
 
   isConnected(): boolean {
-    return this.client.ws?.readyState === WebSocket.OPEN;
+    return this.client.listenerCount('connected') >= 0 && this.client.isConnected();
   }
 
   // Agent management
@@ -417,11 +421,11 @@ export class KrabSDK {
   }
 
   // Event handling
-  on(event: string, listener: Function): void {
+  on(event: string, listener: (...args: any[]) => void): void {
     this.client.on(event, listener);
   }
 
-  off(event: string, listener?: Function): void {
+  off(event: string, listener?: (...args: any[]) => void): void {
     if (listener) {
       this.client.removeListener(event, listener);
     } else {
@@ -456,15 +460,6 @@ export function createKrabSDK(config?: KrabSDKConfig): KrabSDK {
 export function createKrabSDKBrowser(config?: KrabSDKConfig): KrabSDKBrowser {
   return new KrabSDKBrowser(config);
 }
-
-// Export types for external use
-export type {
-  KrabSDKConfig,
-  AgentConfig,
-  ConversationOptions,
-  ToolExecutionOptions,
-  SDKResponse
-};
 
 // Default export
 export default KrabSDK;

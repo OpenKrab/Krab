@@ -2,7 +2,7 @@
 // 🦀 Krab — Telegram Channel (OpenClaw-inspired)
 // ============================================================
 import { BaseChannel, ChannelConfig, BaseMessage, MediaAttachment, MultiModalMessage } from "./base.js";
-import { multiModalProcessor } from "../multimodal/index.js";
+import { defaultMediaProcessor, multiModalProcessor } from "../multimodal/index.js";
 import { logger } from "../utils/logger.js";
 
 // ── Telegram Message Types ──────────────────────────────────────
@@ -41,6 +41,7 @@ interface TelegramMessage {
 // ── Telegram Channel Implementation ────────────────────────────────
 export class TelegramChannel extends BaseChannel {
   private isRunning = false;
+  private botInfo: any | null = null;
 
   constructor(config: ChannelConfig) {
     super("telegram", config);
@@ -52,10 +53,9 @@ export class TelegramChannel extends BaseChannel {
     }
 
     try {
-      // TODO: Implement grammy integration
-      // For now, just mark as running
+      this.botInfo = await this.callTelegram("getMe");
       this.isRunning = true;
-      logger.info("[Telegram] Channel started (placeholder implementation)");
+      logger.info(`[Telegram] Channel started as @${this.botInfo?.username || "unknown"}`);
       
     } catch (error) {
       logger.error("[Telegram] Failed to start channel:", error);
@@ -74,10 +74,16 @@ export class TelegramChannel extends BaseChannel {
     if (!this.isRunning) {
       throw new Error("Telegram channel is not running");
     }
+    if (!recipient) {
+      throw new Error("Telegram recipient chat ID is required");
+    }
 
     try {
-      // TODO: Implement actual Telegram API call
-      logger.debug(`[Telegram] Would send message to ${recipient || "all"}: ${message}`);
+      await this.callTelegram("sendMessage", {
+        chat_id: recipient,
+        text: message,
+        parse_mode: "Markdown"
+      });
       
     } catch (error) {
       logger.error("[Telegram] Failed to send message:", error);
@@ -89,17 +95,16 @@ export class TelegramChannel extends BaseChannel {
     if (!this.isRunning) {
       throw new Error("Telegram channel is not running");
     }
+    if (!recipient) {
+      throw new Error("Telegram recipient chat ID is required");
+    }
 
     try {
-      // Process image before sending
-      const processed = await multiModalProcessor.mediaProcessor.processImage(imageBuffer, filename);
-
-      // TODO: Implement actual Telegram API call for photo
-      logger.debug(`[Telegram] Would send image ${filename} (${processed.metadata.size} bytes) to ${recipient || "all"}`);
-
-      if (caption) {
-        logger.debug(`[Telegram] Image caption: ${caption}`);
-      }
+      const processed = await defaultMediaProcessor.processImage(imageBuffer, filename);
+      await this.callTelegramMultipart("sendPhoto", {
+        chat_id: recipient,
+        caption
+      }, "photo", processed.buffer, filename, "image/png");
 
     } catch (error) {
       logger.error("[Telegram] Failed to send image:", error);
@@ -111,22 +116,16 @@ export class TelegramChannel extends BaseChannel {
     if (!this.isRunning) {
       throw new Error("Telegram channel is not running");
     }
+    if (!recipient) {
+      throw new Error("Telegram recipient chat ID is required");
+    }
 
     try {
-      // Process audio before sending
-      const processed = await multiModalProcessor.mediaProcessor.processAudio(audioBuffer, filename);
-
-      // TODO: Implement actual Telegram API call for audio
-      logger.debug(`[Telegram] Would send audio ${filename} (${processed.metadata.duration}s) to ${recipient || "all"}`);
-
-      if (caption) {
-        logger.debug(`[Telegram] Audio caption: ${caption}`);
-      }
-
-      // Include transcription if available
-      if (processed.transcription) {
-        logger.debug(`[Telegram] Audio transcription: ${processed.transcription}`);
-      }
+      const processed = await defaultMediaProcessor.processAudio(audioBuffer, filename);
+      await this.callTelegramMultipart("sendAudio", {
+        chat_id: recipient,
+        caption
+      }, "audio", processed.buffer, filename, "audio/mpeg");
 
     } catch (error) {
       logger.error("[Telegram] Failed to send audio:", error);
@@ -138,17 +137,16 @@ export class TelegramChannel extends BaseChannel {
     if (!this.isRunning) {
       throw new Error("Telegram channel is not running");
     }
+    if (!recipient) {
+      throw new Error("Telegram recipient chat ID is required");
+    }
 
     try {
-      // Process video before sending
-      const processed = await multiModalProcessor.mediaProcessor.processVideo(videoBuffer, filename);
-
-      // TODO: Implement actual Telegram API call for video
-      logger.debug(`[Telegram] Would send video ${filename} (${processed.metadata.duration}s) to ${recipient || "all"}`);
-
-      if (caption) {
-        logger.debug(`[Telegram] Video caption: ${caption}`);
-      }
+      const processed = await defaultMediaProcessor.processVideo(videoBuffer, filename);
+      await this.callTelegramMultipart("sendVideo", {
+        chat_id: recipient,
+        caption
+      }, "video", processed.buffer, filename, "video/mp4");
 
     } catch (error) {
       logger.error("[Telegram] Failed to send video:", error);
@@ -160,14 +158,15 @@ export class TelegramChannel extends BaseChannel {
     if (!this.isRunning) {
       throw new Error("Telegram channel is not running");
     }
+    if (!recipient) {
+      throw new Error("Telegram recipient chat ID is required");
+    }
 
     try {
-      // TODO: Implement actual Telegram API call for document
-      logger.debug(`[Telegram] Would send file ${filename} (${fileBuffer.length} bytes) to ${recipient || "all"}`);
-
-      if (caption) {
-        logger.debug(`[Telegram] File caption: ${caption}`);
-      }
+      await this.callTelegramMultipart("sendDocument", {
+        chat_id: recipient,
+        caption
+      }, "document", fileBuffer, filename, "application/octet-stream");
 
     } catch (error) {
       logger.error("[Telegram] Failed to send file:", error);
@@ -184,7 +183,7 @@ export class TelegramChannel extends BaseChannel {
     return true; // Can analyze images sent to channel
   }
 
-  async processVoiceMessage(audioBuffer: Buffer): Promise<{
+  async transcribeVoiceMessage(audioBuffer: Buffer): Promise<{
     transcription: string;
     response: string;
   }> {
@@ -206,7 +205,7 @@ export class TelegramChannel extends BaseChannel {
     }
   }
 
-  async analyzeImage(imageBuffer: Buffer): Promise<string> {
+  async analyzeImageBuffer(imageBuffer: Buffer): Promise<string> {
     try {
       return await multiModalProcessor.analyzeImage(imageBuffer);
     } catch (error) {
@@ -235,9 +234,12 @@ export class TelegramChannel extends BaseChannel {
   // Implement handleWebhook for webhook-based message handling
   async handleWebhook(req: any, res: any): Promise<void> {
     try {
-      // For Telegram, webhooks are typically handled by the bot library
-      // This is a placeholder for future webhook implementation
-      logger.debug("[Telegram] Webhook received (placeholder)");
+      const update = req.body;
+      const message = update?.message || update?.edited_message || update?.channel_post;
+      if (message) {
+        const baseMessage = this.convertToBaseMessage(message);
+        await this.processIncomingMessage(baseMessage);
+      }
       res.status(200).send("OK");
     } catch (error) {
       logger.error("[Telegram] Webhook error:", error);
@@ -310,21 +312,69 @@ export class TelegramChannel extends BaseChannel {
 
   // ── Telegram-specific Methods ─────────────────────────────────
   async getBotInfo(): Promise<any> {
-    // TODO: Implement actual Telegram API call
     if (!this.isRunning) {
       throw new Error("Channel is not running");
     }
-    
-    return { username: "placeholder_bot" };
+    this.botInfo = this.botInfo || await this.callTelegram("getMe");
+    return this.botInfo;
   }
 
   async setCommands(commands: Array<{ command: string; description: string }>): Promise<void> {
-    // TODO: Implement actual Telegram API call
     if (!this.isRunning) {
       throw new Error("Channel is not running");
     }
-    
-    logger.info("[Telegram] Bot commands updated (placeholder)");
+    await this.callTelegram("setMyCommands", { commands });
+    logger.info("[Telegram] Bot commands updated");
+  }
+
+  private getApiBase(): string {
+    return `https://api.telegram.org/bot${this.getBotToken()}`;
+  }
+
+  private async callTelegram(method: string, payload?: Record<string, unknown>): Promise<any> {
+    const response = await fetch(`${this.getApiBase()}/${method}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(payload || {})
+    });
+
+    const data: any = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(data?.description || `Telegram API call failed: ${method}`);
+    }
+
+    return data.result;
+  }
+
+  private async callTelegramMultipart(
+    method: string,
+    fields: Record<string, unknown>,
+    fileField: string,
+    buffer: Buffer,
+    filename: string,
+    mimeType: string
+  ): Promise<any> {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(fields)) {
+      if (value !== undefined && value !== null) {
+        form.append(key, String(value));
+      }
+    }
+    form.append(fileField, new Blob([new Uint8Array(buffer)], { type: mimeType }), filename);
+
+    const response = await fetch(`${this.getApiBase()}/${method}`, {
+      method: "POST",
+      body: form
+    });
+
+    const data: any = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(data?.description || `Telegram upload failed: ${method}`);
+    }
+
+    return data.result;
   }
 }
 

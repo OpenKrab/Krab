@@ -348,7 +348,7 @@ export class CodeInterpreter {
 
       case 'python':
         // Basic Python checks
-        if ('import os' in code && 'os.system' in code) {
+        if (code.includes('import os') && code.includes('os.system')) {
           warnings.push('Using os.system may be restricted');
         }
         break;
@@ -399,5 +399,3 @@ export class CodeInterpreter {
     return results;
   }
 }
-
-export { CodeExecutionOptions, ExecutionResult };

@@ -11,9 +11,15 @@ export interface BannerConfig {
   borderColor?: "red" | "blue" | "green" | "yellow" | "cyan" | "magenta";
 }
 
+const ASCII_LOGO = [
+  "░█░█░█▀▄░█▀█░█▀▄",
+  "░█▀▄░█▀▄░█▀█░█▀▄",
+  "░▀░▀░▀░▀░▀░▀░▀▀░",
+];
+
 export const defaultBannerConfig: BannerConfig = {
-  title: "K R A B  —  AGI Agent Framework",
-  subtitle: "Your intelligent companion",
+  title: "K R A B  —  AI Assistant Framework",
+  subtitle: "Neutral, reliable, and focused",
   taglines: taglines.default,
   borderColor: "red"
 };
@@ -24,14 +30,19 @@ export function showBanner(config: Partial<BannerConfig> = {}): void {
   
   const colorFn = pc[finalConfig.borderColor || "red"] || pc.red;
   
-  console.log(
-    colorFn(`
-  🦀 ╔═══════════════════════════════════════╗
-     ║   ${finalConfig.title.padEnd(35)} ║
-     ║   "${randomTagline.padEnd(35)}" ║
-     ╚═══════════════════════════════════════╝
-`),
-  );
+  const line = "─".repeat(60);
+  const banner = [
+    "",
+    ...ASCII_LOGO,
+    line,
+    finalConfig.title,
+    finalConfig.subtitle,
+    `\"${randomTagline}\"`,
+    line,
+    "",
+  ].join("\n");
+
+  console.log(colorFn(banner));
 }
 
 // Predefined banner themes

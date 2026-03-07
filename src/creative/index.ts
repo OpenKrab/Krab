@@ -27,10 +27,12 @@ export type {
   ImageGenerationOptions,
   ImageEditOptions,
   ImageVariationOptions,
-  GeneratedImage,
+  GeneratedImage
+} from './image-generator.js';
+export type {
   MediaAnalysisOptions,
   MediaConversionOptions
-} from './image-generator.js';
+} from './tools.js';
 
 // Creative tools collection for easy registration
 export const creativeTools = [

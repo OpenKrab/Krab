@@ -1,0 +1,17 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "~/.krab/workspace",
+      "model": {
+        "primary": "google/gemini-2.0-flash"
+      }
+    }
+  },
+  "tools": {
+    "profile": "minimal"
+  },
+  "gateway": {
+    "port": 18789,
+    "bind": "127.0.0.1"
+  }
+}

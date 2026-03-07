@@ -198,7 +198,7 @@ async function generateAIAnswer(
       throw new Error(`AI generation failed: ${response.status}`);
     }
 
-    const data = await response.json();
+    const data: any = await response.json();
     return data.choices?.[0]?.message?.content || formatSimpleAnswer(query, sources);
 
   } catch (error) {
@@ -410,7 +410,7 @@ export const researchTool: ToolDefinition = {
         });
         
         if (response.ok) {
-          const data = await response.json();
+          const data: any = await response.json();
           analysis = data.choices?.[0]?.message?.content || '';
         }
       }

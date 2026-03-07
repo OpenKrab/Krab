@@ -2,8 +2,8 @@
 // 🦀 Krab — Configuration System (OpenClaw-inspired)
 // ============================================================
 import { ReflectionOptions } from "./reflector.js";
-import { resolve } from "path";
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { resolve, join, dirname } from "path";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { config as dotenvConfig } from "dotenv";
 import { fileURLToPath } from "url";
 
@@ -190,23 +190,39 @@ function loadDefaultConfig(): KrabConfig {
 
 const DEFAULT_CONFIG = loadDefaultConfig();
 
-const CONFIG_PATH = resolve(process.cwd(), "krab.json");
-const ENV_PATH = resolve(process.cwd(), ".env");
+function resolveStateRoot(): string {
+  const envRoot = process.env.KRAB_STATE_DIR || process.env.KRAB_DATA_DIR;
+  if (envRoot && envRoot.trim().length > 0) {
+    return resolve(envRoot);
+  }
+  return process.cwd();
+}
+
+function getPaths() {
+  const root = resolveStateRoot();
+  return {
+    root,
+    configPath: join(root, "krab.json"),
+    envPath: join(root, ".env"),
+  };
+}
 
 export function loadConfig(): KrabConfig {
+  const { configPath, envPath } = getPaths();
+
   // Load environment variables first
-  dotenvConfig({ path: ENV_PATH });
+  dotenvConfig({ path: envPath });
 
   // Load config file if exists
-  if (existsSync(CONFIG_PATH)) {
+  if (existsSync(configPath)) {
     try {
-      const configData = readFileSync(CONFIG_PATH, "utf-8");
+      const configData = readFileSync(configPath, "utf-8");
       const config = JSON.parse(configData) as KrabConfig;
 
       // Merge with defaults
       return mergeConfig(DEFAULT_CONFIG, config);
     } catch (error) {
-      console.error(`Failed to load config from ${CONFIG_PATH}:`, error);
+      console.error(`Failed to load config from ${configPath}:`, error);
       return DEFAULT_CONFIG;
     }
   }
@@ -215,11 +231,17 @@ export function loadConfig(): KrabConfig {
 }
 
 export function saveConfig(config: Partial<KrabConfig>): void {
+  const { configPath } = getPaths();
   const currentConfig = loadConfig();
   const mergedConfig = mergeConfig(currentConfig, config);
 
-  writeFileSync(CONFIG_PATH, JSON.stringify(mergedConfig, null, 2));
-  console.log(`Config saved to ${CONFIG_PATH}`);
+  const dir = dirname(configPath);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+
+  writeFileSync(configPath, JSON.stringify(mergedConfig, null, 2));
+  console.log(`Config saved to ${configPath}`);
 }
 
 export function mergeConfig(
@@ -248,9 +270,9 @@ export function mergeConfig(
 }
 
 export function getConfigPath(): string {
-  return CONFIG_PATH;
+  return getPaths().configPath;
 }
 
 export function getEnvPath(): string {
-  return ENV_PATH;
+  return getPaths().envPath;
 }

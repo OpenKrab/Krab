@@ -403,8 +403,5 @@ export function createAuthenticationManager(configManager: ConfigurationManager)
   return new AuthenticationManager(configManager);
 }
 
-// Export types
-export type { SDKEnvironment, SDKProfile };
-
 // Default exports
 export default ConfigurationManager;

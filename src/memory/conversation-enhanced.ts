@@ -160,10 +160,14 @@ export class ConversationMemory {
   }
 
   addMessage(conversationId: string, message: Message): void {
-    const state = this.conversations.get(conversationId);
+    let state = this.conversations.get(conversationId);
     if (!state) {
-      logger.warn(`[Memory] Conversation ${conversationId} not found`);
-      return;
+      this.createConversation({ id: conversationId });
+      state = this.conversations.get(conversationId);
+      if (!state) {
+        logger.warn(`[Memory] Failed to create conversation ${conversationId}`);
+        return;
+      }
     }
 
     state.messages.push(message);

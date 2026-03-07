@@ -124,13 +124,32 @@ export class ImageGenerator {
     const quality = options.quality || 'standard';
     const style = options.style || 'vivid';
 
-    // In a real implementation, this would call the OpenAI API
-    // For now, we'll simulate the response
-    const simulatedResult = await this.simulateDalleGeneration(options, imageId);
+    const response = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.apiKeys.openai}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model,
+        prompt: options.prompt,
+        size,
+        quality,
+        style,
+        response_format: 'b64_json'
+      })
+    });
+    if (!response.ok) {
+      throw new Error(`OpenAI image generation failed: ${response.status} ${await response.text()}`);
+    }
+    const data: any = await response.json();
+    const imageBase64 = data.data?.[0]?.b64_json;
+    if (!imageBase64) {
+      throw new Error('OpenAI did not return image data');
+    }
 
-    // Save simulated image
     const outputPath = path.join(this.outputDir, `${imageId}.png`);
-    await this.saveSimulatedImage(outputPath);
+    fs.writeFileSync(outputPath, Buffer.from(imageBase64, 'base64'));
 
     return {
       id: imageId,
@@ -141,8 +160,7 @@ export class ImageGenerator {
       createdAt: new Date(),
       metadata: {
         quality,
-        style,
-        simulated: true
+        style
       }
     };
   }
@@ -418,15 +436,36 @@ export class ImageGenerator {
   }
 
   getGeneratedImages(): GeneratedImage[] {
-    // In a real implementation, this would read from a database
-    // For now, return empty array
-    return [];
+    const files = fs.existsSync(this.outputDir)
+      ? fs.readdirSync(this.outputDir).filter((file) => /\.(png|jpg|jpeg|webp)$/i.test(file))
+      : [];
+
+    return files.map((file) => {
+      const filePath = path.join(this.outputDir, file);
+      const stats = fs.statSync(filePath);
+      return {
+        id: path.parse(file).name,
+        localPath: filePath,
+        prompt: '',
+        model: 'unknown',
+        size: 'unknown',
+        createdAt: stats.birthtime,
+        metadata: {
+          sizeBytes: stats.size
+        }
+      };
+    });
   }
 
   deleteImage(imageId: string): boolean {
-    // In a real implementation, this would delete from storage
-    return false;
+    const candidates = fs.existsSync(this.outputDir)
+      ? fs.readdirSync(this.outputDir).filter((file) => path.parse(file).name === imageId)
+      : [];
+
+    for (const file of candidates) {
+      fs.unlinkSync(path.join(this.outputDir, file));
+    }
+
+    return candidates.length > 0;
   }
 }
-
-export { GeneratedImage, ImageGenerationOptions, ImageEditOptions, ImageVariationOptions };

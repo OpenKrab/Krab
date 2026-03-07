@@ -10,10 +10,9 @@ import type { ToolDefinition, ToolResult } from "../../core/types.js";
 // Import advanced knowledge base features
 import {
   ObsidianAIKnowledgeBase,
-  ObsidianSemanticSearch,
   type ObsidianNote,
   type SemanticSearchResult
-} from "../obsidian/index.js";
+} from "../../obsidian/knowledge-base.js";
 
 // Global knowledge base instance
 let knowledgeBase: ObsidianAIKnowledgeBase | null = null;
@@ -255,7 +254,10 @@ export const obsidianWriteTool: ToolDefinition = {
     content: z.string().describe("Content of the note (Markdown)"),
     folder: z.string().optional().describe("Folder path within the vault"),
     tags: z.array(z.string()).optional().describe("Tags to add to the note"),
-    frontmatter: z.record(z.any()).optional().describe("Additional frontmatter properties"),
+    frontmatter: z
+      .record(z.string(), z.any())
+      .optional()
+      .describe("Additional frontmatter properties"),
     links: z.array(z.string()).optional().describe("Note titles/IDs to link to")
   }),
   async execute(args): Promise<ToolResult> {

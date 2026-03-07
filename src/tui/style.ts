@@ -13,17 +13,19 @@ export const COLORS = {
   warning: "#ffd93d", // Yellow
   error: "#ff6b6b", // Red
   success: "#00ff9f", // Neon green
-  info: "#6c5ce7", // Purple
+  info: "#ffb347", // Soft orange
   gray: "#666666",
 };
+
+export const TAGLINE = "Krab - AI Assistant Framework";
 
 // -----------------
 // 🎨 ASCII LOGO
 // -----------------
 export const ASCII_LOGO = `
-░█░█░█▀▄░█▀█░█▀▄░░░█░█░█▀▄░█▀█░█▀▄
-░█▀▄░█▀▄░█▀█░█▀▄░░░█▀▄░█▀▄░█▀█░█▀▄
-░▀░▀░▀░▀░▀░▀░▀▀░░░░▀░▀░▀░▀░▀░▀░▀▀░
+░█░█░█▀▄░█▀█░█▀▄
+░█▀▄░█▀▄░█▀█░█▀▄
+░▀░▀░▀░▀░▀░▀░▀▀░
 `;
 
 // -----------------
@@ -70,7 +72,7 @@ export function generateGradientText(
 }
 
 export function printBanner(
-  subtitle: string = "Krab - Polymarket Trading Bot",
+  subtitle: string = TAGLINE,
 ) {
   const lines = ASCII_LOGO.split("\n").filter(Boolean);
   lines.forEach((line) => {
@@ -88,9 +90,13 @@ export function printSection(title: string) {
   console.log();
   const c = COLORS.secondary;
   const t = title.padEnd(56, " ");
+  const s = TAGLINE.padEnd(56, " ");
   console.log(`${applyHexColor("┌" + "─".repeat(58) + "┐", c)}`);
   console.log(
-    `${applyHexColor("│", c)} \x1b[1m\x1b[36m${t}\x1b[0m ${applyHexColor("│", c)}`,
+    `${applyHexColor("│", c)} ${applyHexColor(t, COLORS.accent, true)} ${applyHexColor("│", c)}`,
+  );
+  console.log(
+    `${applyHexColor("│", c)} ${applyHexColor(s, COLORS.primary, true)} ${applyHexColor("│", c)}`,
   );
   console.log(`${applyHexColor("└" + "─".repeat(58) + "┘", c)}`);
 }
@@ -113,7 +119,7 @@ export function printInfo(message: string) {
 
 export function printKeyValue(key: string, value: string, indent: number = 2) {
   const spaces = " ".repeat(indent);
-  const bullet = applyHexColor("●", "#00ffff");
+  const bullet = applyHexColor("●", COLORS.accent);
   const coloredKey = applyHexColor(key + ":", COLORS.gray);
   console.log(`${spaces}${bullet} ${coloredKey} \x1b[37m${value}\x1b[0m`);
 }

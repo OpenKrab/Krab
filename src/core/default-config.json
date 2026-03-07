@@ -29,7 +29,45 @@
             "pdfMaxPages": 20,
             "timeoutSeconds": 600,
             "contextTokens": 200000,
-            "maxConcurrent": 1
+            "maxConcurrent": 1,
+            "dmScope": "per-channel-peer",
+            "sessionMaintenance": {
+                "mode": "warn",
+                "pruneAfter": "30d",
+                "maxEntries": 500,
+                "rotateBytes": "10mb",
+                "resetArchiveRetention": "30d"
+            },
+            "sessionPruning": {
+                "enabled": false,
+                "mode": "cache-ttl",
+                "ttl": "5m",
+                "keepLastAssistants": 3,
+                "contextWindowEstimation": 200000
+            },
+            "messages": {
+                "inbound": {
+                    "debounceMs": 2000,
+                    "byChannel": {
+                        "whatsapp": 5000,
+                        "telegram": 1500,
+                        "discord": 1500
+                    }
+                },
+                "groupChat": {
+                    "historyLimit": 10
+                },
+                "queue": {
+                    "mode": "followup"
+                }
+            },
+            "blockStreamingDefault": "off",
+            "blockStreamingBreak": "text_end",
+            "blockStreamingChunk": {
+                "minChars": 150,
+                "maxChars": 1500,
+                "breakPreference": "paragraph"
+            },
         }
     },
     "reflector": {

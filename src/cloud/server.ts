@@ -11,11 +11,16 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import compression from 'compression';
 import { logger } from '../utils/logger.js';
+import { Agent } from '../core/agent.js';
+import { loadConfig } from '../core/config.js';
+import { registry } from '../tools/registry.js';
 
 // Initialize Express app
-const app = express();
+const app: express.Express = express();
 const PORT = process.env.PORT || 3001;
 const NODE_ENV = process.env.NODE_ENV || 'development';
+const cloudAgent = new Agent(loadConfig());
+const activeSessions = new Set<string>();
 
 // Security middleware
 app.use(helmet({
@@ -64,6 +69,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/generated-images', express.static(path.join(process.cwd(), 'generated-images')));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -92,26 +98,32 @@ app.get('/api/v1/status', (req, res) => {
   res.json({
     status: 'operational',
     uptime: process.uptime(),
-    totalUsers: 0, // TODO: Implement user tracking
-    activeSessions: 0, // TODO: Implement session tracking
+    totalUsers: activeSessions.size,
+    activeSessions: activeSessions.size,
     systemLoad: process.cpuUsage(),
     memoryUsage: process.memoryUsage(),
     timestamp: new Date().toISOString()
   });
 });
 
-// Authentication middleware (placeholder)
 const authenticate = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  const apiKey = req.headers['x-api-key'] || req.query.apiKey;
+  const apiKey = req.headers['x-api-key'] || req.query.apiKey || req.headers.authorization?.replace(/^Bearer\s+/i, '');
+  const expectedApiKey = process.env.KRAB_API_KEY;
 
-  if (!apiKey && NODE_ENV === 'production') {
+  if (!apiKey && (NODE_ENV === 'production' || expectedApiKey)) {
     return res.status(401).json({
       error: 'API key required',
       message: 'Please provide a valid API key in the X-API-Key header'
     });
   }
 
-  // TODO: Implement proper API key validation
+  if (expectedApiKey && apiKey !== expectedApiKey) {
+    return res.status(403).json({
+      error: 'Invalid API key',
+      message: 'The provided API key is not valid'
+    });
+  }
+
   next();
 };
 
@@ -293,35 +305,20 @@ io.on('connection', (socket) => {
   });
 });
 
-// Placeholder functions (will be replaced with actual implementations)
 async function processMessage(message: string, context: any): Promise<string> {
-  // Simulate processing delay
-  await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 1500));
-
-  // TODO: Integrate with Krab core agent
-  const responses = [
-    "I understand your request. Let me help you with that.",
-    "That's an interesting question! Here's what I think...",
-    "I can help you with that. Let me process this for you.",
-    "Great question! Based on my analysis...",
-    "I see what you're looking for. Let me assist you with that."
-  ];
-
-  return responses[Math.floor(Math.random() * responses.length)];
+  const sessionId = context?.sessionId || 'default';
+  activeSessions.add(sessionId);
+  return await cloudAgent.chat(message, { conversationId: sessionId });
 }
 
 async function executeTool(tool: string, parameters: any, context: any): Promise<any> {
-  // TODO: Integrate with Krab tool registry
   logger.info(`Executing tool: ${tool} with parameters:`, parameters);
-
-  // Simulate tool execution
-  await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 1200));
-
+  const result = await registry.executeTool(tool, parameters || {});
   return {
-    success: true,
-    output: `Tool ${tool} executed successfully`,
-    parameters,
-    timestamp: new Date().toISOString()
+    ...result,
+    tool,
+    timestamp: new Date().toISOString(),
+    sessionId: context?.sessionId || 'default'
   };
 }
 

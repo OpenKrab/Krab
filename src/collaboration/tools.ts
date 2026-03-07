@@ -28,47 +28,70 @@ export class CollaborationTools {
   async executeTool(options: CollaborationToolOptions): Promise<ToolResult> {
     try {
       logger.info(`[CollaborationTools] Executing: ${options.action}`);
+      let payload: Record<string, unknown> = {};
 
       switch (options.action) {
-        case 'create_agent':
+        case 'create_agent': {
           const agentResult = this.createAgent(options.agentData);
+          payload = { agentId: agentResult };
           break;
+        }
 
-        case 'list_agents':
+        case 'list_agents': {
           const agents = this.collaboration.getAllAgents();
+          payload = {
+            agents: agents.map(a => ({ id: a.id, name: a.name, role: a.role, status: a.status }))
+          };
           break;
+        }
 
-        case 'create_task':
+        case 'create_task': {
           const taskResult = this.createTask(options.taskData);
+          payload = { taskId: taskResult };
           break;
+        }
 
-        case 'assign_task':
+        case 'assign_task': {
           const assignResult = this.assignTask(options.taskId, options.agentId);
+          payload = { assigned: assignResult };
           break;
+        }
 
-        case 'update_task':
+        case 'update_task': {
           const updateResult = this.updateTask(options.taskId, 'completed');
+          payload = { updated: updateResult };
           break;
+        }
 
-        case 'start_session':
+        case 'start_session': {
           const sessionResult = this.startSession(options.sessionData);
+          payload = { sessionId: sessionResult };
           break;
+        }
 
-        case 'add_task_to_session':
+        case 'add_task_to_session': {
           const addResult = this.addTaskToSession(options.sessionId, options.taskId);
+          payload = { added: addResult };
           break;
+        }
 
-        case 'send_message':
+        case 'send_message': {
           const messageResult = this.sendMessage(options.messageData);
+          payload = { messageId: messageResult };
           break;
+        }
 
-        case 'get_messages':
+        case 'get_messages': {
           const messages = this.getMessages(options.agentId, options.limit);
+          payload = { messages };
           break;
+        }
 
-        case 'generate_report':
+        case 'generate_report': {
           const report = this.generateReport(options.sessionId);
+          payload = { report };
           break;
+        }
 
         default:
           throw new Error(`Unknown collaboration action: ${options.action}`);
@@ -79,16 +102,7 @@ export class CollaborationTools {
         output: JSON.stringify({
           action: options.action,
           timestamp: new Date().toISOString(),
-          ...(options.action === 'create_agent' && agentResult && { agentId: agentResult }),
-          ...(options.action === 'list_agents' && { agents: agents.map(a => ({ id: a.id, name: a.name, role: a.role, status: a.status })) }),
-          ...(options.action === 'create_task' && taskResult && { taskId: taskResult }),
-          ...(options.action === 'assign_task' && { assigned: assignResult }),
-          ...(options.action === 'update_task' && { updated: updateResult }),
-          ...(options.action === 'start_session' && sessionResult && { sessionId: sessionResult }),
-          ...(options.action === 'add_task_to_session' && { added: addResult }),
-          ...(options.action === 'send_message' && messageResult && { messageId: messageResult }),
-          ...(options.action === 'get_messages' && { messages }),
-          ...(options.action === 'generate_report' && { report })
+          ...payload
         }, null, 2)
       };
 
@@ -126,7 +140,7 @@ export class CollaborationTools {
     });
   }
 
-  private createTask(taskData?: Partial<Task>): string | undefined {
+  createTask(taskData?: Partial<Task>): string | undefined {
     if (!taskData?.title || !taskData?.description) {
       throw new Error('Task title and description are required');
     }
@@ -145,14 +159,14 @@ export class CollaborationTools {
     });
   }
 
-  private assignTask(taskId?: string, agentId?: string): boolean {
+  assignTask(taskId?: string, agentId?: string): boolean {
     if (!taskId || !agentId) {
       throw new Error('Task ID and Agent ID are required');
     }
     return this.collaboration.assignTask(taskId, agentId);
   }
 
-  private updateTask(taskId?: string, status: Task['status'] = 'completed'): boolean {
+  updateTask(taskId?: string, status: Task['status'] = 'completed'): boolean {
     if (!taskId) {
       throw new Error('Task ID is required');
     }
@@ -199,6 +213,18 @@ export class CollaborationTools {
       throw new Error('Session ID is required');
     }
     return this.collaboration.generateSessionReport(sessionId);
+  }
+
+  getAllTasks(): Task[] {
+    return Array.from(this.collaboration.getTasksByStatus('pending'))
+      .concat(this.collaboration.getTasksByStatus('assigned'))
+      .concat(this.collaboration.getTasksByStatus('in_progress'))
+      .concat(this.collaboration.getTasksByStatus('completed'))
+      .concat(this.collaboration.getTasksByStatus('failed'));
+  }
+
+  async delegateTask(taskId: string): Promise<string | null> {
+    return this.collaboration.delegateTask(taskId);
   }
 
   // Advanced features
@@ -432,7 +458,7 @@ export const taskManagementTool: Tool = {
           };
 
         case 'list':
-          const tasks = Array.from(collaborationTools.collaboration['tasks'].values());
+          const tasks = collaborationTools.getAllTasks();
           return {
             success: true,
             output: JSON.stringify({
@@ -470,7 +496,7 @@ export const taskManagementTool: Tool = {
           if (!args.taskId) {
             throw new Error('Task ID is required');
           }
-          const delegatedAgent = await collaborationTools.collaboration.delegateTask(args.taskId);
+          const delegatedAgent = await collaborationTools.delegateTask(args.taskId);
           return {
             success: !!delegatedAgent,
             output: delegatedAgent ? `Task delegated to agent: ${delegatedAgent}` : 'No suitable agent found for delegation'
@@ -478,7 +504,7 @@ export const taskManagementTool: Tool = {
 
         case 'analyze':
           // Analyze task dependencies and suggest improvements
-          const allTasks = Array.from(collaborationTools.collaboration['tasks'].values());
+          const allTasks = collaborationTools.getAllTasks();
           const analysis = {
             totalTasks: allTasks.length,
             pendingTasks: allTasks.filter(t => t.status === 'pending').length,

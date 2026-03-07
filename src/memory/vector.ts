@@ -23,17 +23,24 @@ interface SearchResult {
 }
 
 export class VectorMemory {
-  private db: Database.Database;
+  private db: any;
   private embedder: any | null = null;
   private readonly workspace: string;
   private readonly modelName = "nomic-ai/nomic-embed-text-v1.5";
+  private initialized = false;
+  private initError: Error | null = null;
 
   constructor(workspace: string) {
     this.workspace = resolve(workspace);
     this.ensureWorkspace();
-    this.db = new Database(resolve(this.workspace, "vector-memory.db"));
-    this.initializeDatabase();
-    this.initializeEmbedder();
+    try {
+      this.db = new Database(resolve(this.workspace, "vector-memory.db"));
+      this.initializeDatabase();
+      this.initialized = true;
+    } catch (error) {
+      this.initError = error as Error;
+      logger.warn("[VectorMemory] Failed to initialize:", error);
+    }
   }
 
   private ensureWorkspace(): void {
@@ -105,10 +112,10 @@ export class VectorMemory {
     }
   }
 
-  private insertStmt: Database.Statement;
-  private searchStmt: Database.Statement;
-  private deleteStmt: Database.Statement;
-  private clearStmt: Database.Statement;
+  private insertStmt: any;
+  private searchStmt: any;
+  private deleteStmt: any;
+  private clearStmt: any;
 
   async addEntry(
     content: string,

@@ -53,12 +53,36 @@ export class BrowserVision {
     logger.info(`[BrowserVision] Analyzing page: ${sessionId}`);
 
     try {
-      // Take screenshot for analysis
-      const screenshot = await session.page.screenshot({ fullPage: true, type: 'png' });
-      
-      // In a real implementation, this would use vision AI
-      // For now, we'll simulate the analysis
-      const analysis = await this.simulateVisionAnalysis(screenshot, query);
+      const [title, pageStats, elements] = await Promise.all([
+        session.page.title(),
+        session.page.evaluate(() => {
+          const doc = (globalThis as any).document;
+          return {
+            links: doc.querySelectorAll('a').length,
+            buttons: doc.querySelectorAll('button').length,
+            inputs: doc.querySelectorAll('input, textarea, select').length,
+            headings: doc.querySelectorAll('h1, h2, h3').length
+          };
+        }),
+        session.page.evaluate(() => {
+          const doc = (globalThis as any).document;
+          return Array.from(doc.querySelectorAll('button, input, a, h1, h2, h3'))
+            .slice(0, 25)
+            .map((el: any) => ({
+              type: el.tagName.toLowerCase(),
+              text: (el.innerText || el.value || el.getAttribute('aria-label') || '').trim().slice(0, 120),
+              selector: el.id ? `#${el.id}` : el.tagName.toLowerCase()
+            }));
+        })
+      ]);
+
+      const descriptionParts = [title && `Title: ${title}`, query && `Focus: ${query}`].filter(Boolean);
+      const analysis = {
+        description: descriptionParts.join(' | ') || 'Page analysis complete',
+        elements,
+        confidence: elements.length > 0 ? 0.9 : 0.6,
+        accessibility: pageStats
+      };
       
       return {
         analysis
@@ -79,23 +103,28 @@ export class BrowserVision {
     logger.info(`[BrowserVision] Extracting text: ${sessionId}`);
 
     try {
-      let screenshot;
-      
       if (selector) {
-        // Screenshot specific element
         const element = await session.page.waitForSelector(selector, { timeout: 5000 });
-        screenshot = await element.screenshot({ type: 'png' });
+        const text = await element.evaluate((node: any) => node.innerText || node.textContent || node.value || '');
+        return {
+          ocr: {
+            text: String(text).trim(),
+            confidence: 0.95,
+            language: 'unknown',
+            boundingBox: null
+          }
+        };
       } else {
-        // Screenshot full page
-        screenshot = await session.page.screenshot({ fullPage: true, type: 'png' });
+        const text = await session.page.evaluate(() => (globalThis as any).document.body?.innerText || '');
+        return {
+          ocr: {
+            text: String(text).trim(),
+            confidence: 0.9,
+            language: 'unknown',
+            boundingBox: null
+          }
+        };
       }
-
-      // Simulate OCR extraction
-      const ocrResult = await this.simulateOCR(screenshot);
-      
-      return {
-        ocr: ocrResult
-      };
 
     } catch (error) {
       logger.error(`[BrowserVision] Text extraction failed:`, error);
@@ -112,14 +141,35 @@ export class BrowserVision {
     logger.info(`[BrowserVision] Finding elements: ${elementTypes.join(', ')}`);
 
     try {
-      // Take screenshot for element detection
-      const screenshot = await session.page.screenshot({ fullPage: true, type: 'png' });
-      
-      // Simulate element finding
-      const elements = await this.simulateElementDetection(screenshot, elementTypes, query);
+      const selectorMap: Record<string, string> = {
+        button: 'button, input[type="button"], input[type="submit"]',
+        input: 'input, textarea, select',
+        link: 'a',
+        heading: 'h1, h2, h3, h4, h5, h6',
+        image: 'img'
+      };
+
+      const selectors = elementTypes
+        .map((type) => selectorMap[type] || type)
+        .join(', ');
+
+      const elements = await session.page.evaluate(({ selectors, query }) => {
+        const doc = (globalThis as any).document;
+        return Array.from(doc.querySelectorAll(selectors))
+          .map((el: any) => ({
+            type: el.tagName.toLowerCase(),
+            selector: el.id ? `#${el.id}` : el.tagName.toLowerCase(),
+            text: (el.innerText || el.value || el.alt || '').trim(),
+            position: el.getBoundingClientRect ? {
+              x: el.getBoundingClientRect().x,
+              y: el.getBoundingClientRect().y
+            } : undefined
+          }))
+          .filter((el: any) => !query || `${el.text} ${el.selector}`.toLowerCase().includes(String(query).toLowerCase()));
+      }, { selectors, query });
       
       return {
-        elements
+        elements: elements.map((el: any) => ({ ...el, confidence: 0.9 }))
       };
 
     } catch (error) {
@@ -130,16 +180,29 @@ export class BrowserVision {
 
   async compareScreenshots(sessionId: string, screenshot1: string, screenshot2: string, threshold: number = 0.8): Promise<VisionResult> {
     const session = this.sessionManager.getSession(sessionId);
-    if (!session || !session.status !== 'active') {
+    if (!session || session.status !== 'active') {
       throw new Error(`Invalid session or session not active: ${sessionId}`);
     }
 
     logger.info(`[BrowserVision] Comparing screenshots: ${sessionId}`);
 
     try {
-      // In a real implementation, this would use image comparison
-      // For now, we'll simulate the comparison
-      const comparison = await this.simulateScreenshotComparison(screenshot1, screenshot2, threshold);
+      const [one, two] = await Promise.all([
+        await import('fs').then(fs => fs.promises.readFile(screenshot1)),
+        await import('fs').then(fs => fs.promises.readFile(screenshot2))
+      ]);
+      const maxLength = Math.max(one.length, two.length) || 1;
+      let same = 0;
+      for (let i = 0; i < Math.min(one.length, two.length); i++) {
+        if (one[i] === two[i]) same++;
+      }
+      const similarity = same / maxLength;
+      const comparison = {
+        similarity,
+        differences: similarity >= threshold ? [] : [
+          { type: 'binary_diff', description: `Files differ (${Math.round((1 - similarity) * 100)}% mismatch)` }
+        ]
+      };
       
       return {
         comparison
@@ -151,75 +214,6 @@ export class BrowserVision {
     }
   }
 
-  // Placeholder methods for vision AI simulation
-  private async simulateVisionAnalysis(screenshot: Buffer, query?: string): Promise<any> {
-    // This would connect to a vision AI service like GPT-4V
-    // For now, return simulated analysis
-    await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
-    
-    return {
-      description: query ? `Analysis of: ${query}` : "Page analysis complete",
-      elements: [
-        { type: "button", text: "Submit", selector: "button[type='submit']" },
-        { type: "input", text: "Email", selector: "input[type='email']" },
-        { type: "heading", text: "Welcome", selector: "h1" }
-      ],
-      confidence: 0.85 + Math.random() * 0.1,
-      accessibility: {
-        score: 0.9,
-        issues: ["Consider adding ARIA labels", "Improve color contrast"]
-      }
-    };
-  }
-
-  private async simulateOCR(screenshot: Buffer): Promise<any> {
-    // This would use an OCR service
-    // For now, return simulated OCR result
-    await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 1200));
-    
-    return {
-      text: "Extracted text from image (simulated)",
-      confidence: 0.92 + Math.random() * 0.05,
-      language: "en",
-      boundingBox: {
-        x: 100,
-        y: 100,
-        width: 400,
-        height: 200
-      }
-    };
-  }
-
-  private async simulateElementDetection(screenshot: Buffer, elementTypes: string[], query?: string): Promise<any[]> {
-    // This would use a vision model to detect elements
-    await new Promise(resolve => setTimeout(resolve, 600 + Math.random() * 1800));
-    
-    const elements = elementTypes.map(type => ({
-      type,
-      selector: `.${type}`,
-      text: `${type.charAt(0).toUpperCase()}${type.slice(1)} element`,
-      position: {
-        x: Math.random() * 800,
-        y: Math.random() * 600
-      },
-      confidence: 0.7 + Math.random() * 0.2
-    }));
-
-    return elements;
-  }
-
-  private async simulateScreenshotComparison(screenshot1: string, screenshot2: string, threshold: number): Promise<any> {
-    // This would use image comparison algorithms
-    await new Promise(resolve => setTimeout(resolve, 1200 + Math.random() * 2400));
-    
-    return {
-      similarity: 0.75 + Math.random() * 0.2,
-      differences: [
-        { type: "content", description: "Text content differs" },
-        { type: "layout", description: "Element positions changed" }
-      ]
-    };
-  }
 }
 
 // ── Browser Vision Tool ───────────────────────────────────────

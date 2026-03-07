@@ -352,5 +352,3 @@ export class ComputerInterface {
     }
   }
 }
-
-export { ComputerAction, MouseAction, KeyboardAction, ScreenshotAction, WindowAction };

@@ -116,8 +116,8 @@ export class SQLiteMessageStore implements MessageStore {
 
     try {
       // Dynamic import for better compatibility
-      const sqlite = await import("better-sqlite3");
-      const Database = sqlite.default || sqlite;
+      const sqliteModule = await import("better-sqlite3");
+      const Database = (sqliteModule as any).default ?? sqliteModule;
 
       this.db = new Database(this.dbPath);
 
@@ -643,7 +643,7 @@ export class StateManager {
       media: message.media,
       processing: {
         transcription: message.transcription,
-        visionAnalysis: message.visionAnalysis
+        visionAnalysis: (message as any).visionAnalysis ?? message.metadata?.forwardFrom
       },
       tags: [],
       createdAt: new Date(),

@@ -295,14 +295,14 @@ export class WhatsAppChannel extends BaseChannel {
       if (msg.key.fromMe) continue;
 
       const baseMessage = await this.convertToBaseMessage(msg);
-      await this.handleIncomingMessage(baseMessage);
+      await this.processIncomingMessage(baseMessage);
     }
   }
 
   private async convertToBaseMessage(msg: WhatsAppMessage): Promise<MultiModalMessage> {
     const jid = msg.key.remoteJid;
     const isGroup = jid.endsWith("@g.us");
-    const senderId = msg.key.participant || msg.key.remoteJid;
+    const senderId = (msg as any).key.participant || msg.key.remoteJid;
 
     // Get contact info
     let displayName = msg.pushName || "Unknown";
@@ -412,7 +412,7 @@ export class WhatsAppChannel extends BaseChannel {
     return true;
   }
 
-  async processVoiceMessage(audioBuffer: Buffer): Promise<{
+  async transcribeVoiceMessage(audioBuffer: Buffer): Promise<{
     transcription: string;
     response: string;
   }> {
@@ -433,7 +433,7 @@ export class WhatsAppChannel extends BaseChannel {
     }
   }
 
-  async analyzeImage(imageBuffer: Buffer): Promise<string> {
+  async analyzeImageBuffer(imageBuffer: Buffer): Promise<string> {
     try {
       return await multiModalProcessor.analyzeImage(imageBuffer);
     } catch (error) {
@@ -453,6 +453,95 @@ export class WhatsAppChannel extends BaseChannel {
       supportedVideoTypes: ["video/mp4", "video/avi", "video/mov"],
       supportedFileTypes: ["*/*"]
     };
+  }
+
+  // ── Webhook Handler (WhatsApp Business API) ─────────────────────
+  async handleWebhook(req: any, res: any): Promise<void> {
+    try {
+      const { object } = req.body;
+
+      if (object !== "whatsapp_business_account") {
+        res.status(200).send("OK");
+        return;
+      }
+
+      const entry = req.body.entry?.[0];
+      const changes = entry?.changes?.[0];
+      const messages = changes?.value?.messages;
+
+      if (!messages || messages.length === 0) {
+        res.status(200).send("OK");
+        return;
+      }
+
+      // Process each message
+      for (const msg of messages) {
+        const baseMessage = this.convertWebhookToMessage(msg, changes.value.metadata);
+        
+        // Send typing indicator
+        await this.sendTypingIndicator(baseMessage.sender.id);
+        
+        // Process message through agent
+        await this.processIncomingMessage(baseMessage);
+      }
+
+      res.status(200).send("OK");
+    } catch (error) {
+      logger.error("[WhatsApp] Webhook error:", error);
+      res.status(500).send("Internal Server Error");
+    }
+  }
+
+  private convertWebhookToMessage(msg: any, metadata: any): BaseMessage {
+    const sender = msg.from;
+    const type = this.getMessageType(msg);
+    
+    let content = "";
+    if (msg.text?.body) content = msg.text.body;
+    else if (msg.image?.caption) content = msg.image.caption;
+    else if (msg.video?.caption) content = msg.video.caption;
+    else if (msg.document?.caption) content = msg.document.caption;
+    else if (msg.location) content = `[Location: ${msg.location.latitude}, ${msg.location.longitude}]`;
+    else if (msg.contacts) content = "[Contacts shared]";
+
+    return {
+      id: msg.id || `wa_${Date.now()}`,
+      timestamp: new Date(parseInt(msg.timestamp) * 1000),
+      sender: {
+        id: sender,
+        username: sender
+      },
+      channel: "whatsapp",
+      content,
+      type,
+      metadata: {
+        groupId: msg.chat?.groupId
+      }
+    };
+  }
+
+  private getMessageType(msg: any): BaseMessage["type"] {
+    if (msg.text) return "text";
+    if (msg.image) return "image";
+    if (msg.audio) return "audio";
+    if (msg.video) return "video";
+    if (msg.document) return "file";
+    if (msg.sticker) return "sticker";
+    if (msg.location) return "text";
+    if (msg.contacts) return "text";
+    return "text";
+  }
+
+  private async sendTypingIndicator(recipient: string): Promise<void> {
+    if (!this.sock || !this.isConnected) return;
+    
+    try {
+      // Baileys doesn't have built-in typing indicator via webhook
+      // This would work with WhatsApp Business API
+      logger.debug(`[WhatsApp] Sending typing indicator to ${recipient}`);
+    } catch (error) {
+      logger.warn("[WhatsApp] Failed to send typing indicator:", error);
+    }
   }
 }
 

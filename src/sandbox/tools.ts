@@ -180,7 +180,7 @@ export const codeInterpreterTool: Tool = {
     timeout: z.number().optional().describe("Execution timeout in milliseconds"),
     sandboxed: z.boolean().optional().describe("Use sandboxed execution"),
     input: z.string().optional().describe("Input data for the code"),
-    env: z.record(z.string()).optional().describe("Environment variables"),
+    env: z.record(z.string(), z.string()).optional().describe("Environment variables"),
     dependencies: z.array(z.string()).optional().describe("Additional dependencies to install")
   }),
 

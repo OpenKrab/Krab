@@ -44,7 +44,7 @@ export const daemonCommand = new Command("daemon")
     new Command("start")
       .description("Start the daemon")
       .option("--gateway", "Start with gateway server")
-      .action(async (options) => {
+      .action(async (_options) => {
         if (isRunning()) {
           console.log(pc.yellow("\n⚠️  Daemon is already running\n"));
           return;
@@ -52,10 +52,7 @@ export const daemonCommand = new Command("daemon")
 
         console.log(pc.dim("\n🚀 Starting Krab daemon...\n"));
 
-        const args = ["dist/cli.js", "chat"];
-        if (options.gateway) {
-          args.push("--gateway");
-        }
+        const args = ["dist/cli.js", "gateway", "start"];
 
         // Start detached process
         const child = spawn("node", args, {
@@ -117,7 +114,7 @@ export const daemonCommand = new Command("daemon")
         await new Promise(resolve => setTimeout(resolve, 1000));
 
         // Start
-        const args = ["dist/cli.js", "chat"];
+        const args = ["dist/cli.js", "gateway", "start"];
         const child = spawn("node", args, {
           detached: true,
           stdio: ["ignore", fs.openSync(LOG_FILE, "a"), fs.openSync(LOG_FILE, "a")],

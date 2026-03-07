@@ -123,6 +123,10 @@ export class KrabCloudClient extends EventEmitter {
     this.emit('disconnected');
   }
 
+  isConnected(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
+  }
+
   private handleReconnect(): void {
     if (this.reconnectAttempts >= this.config.retryAttempts) {
       this.emit('error', new Error('Max reconnection attempts reached'));
@@ -159,6 +163,10 @@ export class KrabCloudClient extends EventEmitter {
       default:
         this.emit('message', message);
     }
+  }
+
+  private async parseJsonResponse<T>(response: Response): Promise<T> {
+    return (await response.json()) as T;
   }
 
   // Chat methods
@@ -214,7 +222,7 @@ export class KrabCloudClient extends EventEmitter {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    return response.json();
+    return this.parseJsonResponse<ChatResponse>(response);
   }
 
   // Tool execution methods
@@ -270,7 +278,7 @@ export class KrabCloudClient extends EventEmitter {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    return response.json();
+    return this.parseJsonResponse<ToolResult>(response);
   }
 
   // Health check
@@ -355,7 +363,9 @@ export class KrabCloudBrowserClient extends EventEmitter {
 
         this.ws.onmessage = (event) => {
           try {
-            const message = JSON.parse(event.data);
+            const rawData =
+              typeof event.data === 'string' ? event.data : String(event.data);
+            const message = JSON.parse(rawData);
             this.handleMessage(message);
           } catch (error) {
             this.emit('error', new Error(`Failed to parse WebSocket message: ${error}`));
@@ -433,6 +443,10 @@ export class KrabCloudBrowserClient extends EventEmitter {
     }
   }
 
+  private async parseJsonResponse<T>(response: Response): Promise<T> {
+    return (await response.json()) as T;
+  }
+
   // HTTP-only methods for browser (WebSocket is handled above)
   async sendChatMessageHTTP(message: ChatMessage): Promise<ChatResponse> {
     const response = await fetch(`${this.config.apiUrl}/api/v1/chat/message`, {
@@ -452,7 +466,7 @@ export class KrabCloudBrowserClient extends EventEmitter {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    return response.json();
+    return this.parseJsonResponse<ChatResponse>(response);
   }
 
   async executeToolHTTP(execution: ToolExecution): Promise<ToolResult> {
@@ -473,7 +487,7 @@ export class KrabCloudBrowserClient extends EventEmitter {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    return response.json();
+    return this.parseJsonResponse<ToolResult>(response);
   }
 
   async healthCheck(): Promise<any> {

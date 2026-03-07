@@ -1,61 +1,63 @@
 // ============================================================
-// 🦀 Krab SDK — Main Entry Point
+// Krab SDK - Main Entry Point
 // ============================================================
+import KrabSDK, {
+  createKrabSDK,
+  type AgentConfig,
+  type ConversationOptions,
+  type KrabSDKConfig,
+  type SDKResponse,
+  type ToolExecutionOptions,
+} from "./index.js";
+import {
+  PluginManager,
+  ToolManager,
+  createPluginManager,
+  createToolManager,
+} from "./tools.js";
+import {
+  AuthenticationManager,
+  ConfigurationManager,
+  createAuthenticationManager,
+  createConfigurationManager,
+  type AuthCredentials,
+  type SDKEnvironment,
+  type SDKProfile,
+} from "./config.js";
 
-// Core SDK
 export {
   KrabSDK,
-  KrabSDKBrowser,
   createKrabSDK,
-  createKrabSDKBrowser
-} from './index.js';
-
-// Tool Integration
-export {
   ToolManager,
   createToolManager,
-  webToolsSet,
-  fileToolsSet,
-  aiToolsSet,
-  ToolWrapper,
-  ToolSet,
-  type ToolWrapper,
-  type ToolSet
-} from './tools.js';
-
-// Plugin System
-export {
   PluginManager,
   createPluginManager,
-  type KrabPlugin
-} from './tools.js';
-
-// Configuration Management
-export {
   ConfigurationManager,
   createConfigurationManager,
   AuthenticationManager,
   createAuthenticationManager,
-  type SDKEnvironment,
-  type SDKProfile,
-  type AuthCredentials
-} from './config.js';
-
-// Re-export types
+};
+export {
+  KrabSDKBrowser,
+  createKrabSDKBrowser,
+} from "./index.js";
+export {
+  webToolsSet,
+  fileToolsSet,
+  aiToolsSet,
+  type KrabPlugin,
+  type ToolSet,
+  type ToolWrapper,
+} from "./tools.js";
 export type {
   KrabSDKConfig,
   AgentConfig,
   ConversationOptions,
   ToolExecutionOptions,
   SDKResponse,
-  CloudConfig,
-  ChatMessage,
-  ChatResponse,
-  ToolExecution,
-  ToolResult
-} from './index.js';
+} from "./index.js";
+export type { AuthCredentials, SDKEnvironment, SDKProfile } from "./config.js";
 
-// Utility functions
 export function createKrabSDKWithTools(config?: KrabSDKConfig) {
   const sdk = createKrabSDK(config);
   const toolManager = createToolManager(sdk);
@@ -69,26 +71,27 @@ export function createKrabSDKWithTools(config?: KrabSDKConfig) {
     pluginManager,
     configManager,
     authManager,
-    // Convenience methods
     async connect() {
       return sdk.connect();
     },
-    async sendMessage(message: string, options?: any) {
+    async sendMessage(message: string, options?: ConversationOptions) {
       return sdk.sendMessage(message, options);
     },
-    async executeTool(tool: string, params: any, options?: any) {
+    async executeTool(
+      tool: string,
+      params: any,
+      options?: Partial<ToolExecutionOptions>,
+    ): Promise<SDKResponse<any>> {
       return toolManager.executeTool(tool, params, options);
     },
     disconnect() {
       sdk.disconnect();
-    }
+    },
   };
 }
 
-// Default export
 export default KrabSDK;
 
-// Version info
-export const VERSION = '1.0.0';
-export const SDK_NAME = 'Krab SDK';
-export const DESCRIPTION = 'Software Development Kit for Krab AGI Agent Framework';
+export const VERSION = "1.0.0";
+export const SDK_NAME = "Krab SDK";
+export const DESCRIPTION = "Software Development Kit for Krab AGI Agent Framework";

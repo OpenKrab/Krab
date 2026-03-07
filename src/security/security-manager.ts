@@ -102,7 +102,7 @@ export interface CostControlRule {
 export class SecurityManager extends EventEmitter {
   private users: Map<string, User> = new Map();
   private tokens: Map<string, AuthToken> = new Map();
-  private auditLogs: AuditLogEntry[] = new Map();
+  private auditLogs: AuditLogEntry[] = [];
   private toolApprovals: Map<string, ToolApprovalRequest> = new Map();
   private rateLimits: Map<string, RateLimitRule> = new Map();
   private costControls: Map<string, CostControlRule> = new Map();
@@ -761,5 +761,3 @@ export class SecurityManager extends EventEmitter {
     };
   }
 }
-
-export { User, AuthToken, AuditLogEntry, ToolApprovalRequest, RateLimitRule, CostControlRule };

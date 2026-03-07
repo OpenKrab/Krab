@@ -15,7 +15,9 @@ export {
 
 // Re-export types
 export type {
-  CodeToolOptions,
+  CodeToolOptions
+} from './tools.js';
+export type {
   ExecutionResult
 } from './code-interpreter.js';
 

@@ -11,7 +11,8 @@ import { loadConfig } from "../core/config.js";
 import { ConversationMemory } from "../memory/conversation-enhanced.js";
 import { registry } from "../tools/registry.js";
 import { ChannelManager } from "../channels/manager.js";
-import { readFileSync, existsSync, statSync } from "fs";
+import { presenceTracker } from "../presence/tracker.js";
+import { readFileSync, existsSync, statSync, createReadStream } from "fs";
 import { join, resolve } from "path";
 import { fileURLToPath } from "url";
 
@@ -303,7 +304,7 @@ export class GatewayServer {
     const url = parseUrl(req.url || "", true);
     const path = url.pathname || "/";
 
-    if (path !== "/health" && !(await this.authenticateRequest(req))) {
+    if (path !== "/health" && !path.startsWith("/generated-images/") && !(await this.authenticateRequest(req))) {
       res.writeHead(401, { "Content-Type": "application/json" });
       res.end(
         JSON.stringify({
@@ -332,6 +333,11 @@ export class GatewayServer {
         res.end(
           "🦀 Krab Gateway — TUI/CLI mode active. Web Dashboard disabled.",
         );
+        return;
+      }
+
+      if (path.startsWith("/generated-images/") && req.method === "GET") {
+        await this.serveGeneratedAsset(path, res);
         return;
       }
 
@@ -381,6 +387,43 @@ export class GatewayServer {
         }),
       );
     }
+  }
+
+  private async serveGeneratedAsset(requestPath: string, res: ServerResponse): Promise<void> {
+    const relativePath = requestPath.replace(/^\/generated-images\//, "");
+    const assetPath = resolve(process.cwd(), "generated-images", relativePath);
+    const baseDir = resolve(process.cwd(), "generated-images");
+
+    if (!assetPath.startsWith(baseDir) || !existsSync(assetPath) || statSync(assetPath).isDirectory()) {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: { message: "Asset not found", type: "not_found" } }));
+      return;
+    }
+
+    const extension = assetPath.split(".").pop()?.toLowerCase();
+    const contentTypeMap: Record<string, string> = {
+      png: "image/png",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      gif: "image/gif",
+      webp: "image/webp",
+      mp3: "audio/mpeg",
+      wav: "audio/wav",
+      ogg: "audio/ogg",
+      m4a: "audio/mp4",
+      mp4: "video/mp4",
+      mov: "video/quicktime",
+      avi: "video/x-msvideo",
+      pdf: "application/pdf",
+      json: "application/json",
+      txt: "text/plain"
+    };
+
+    res.writeHead(200, {
+      "Content-Type": contentTypeMap[extension || ""] || "application/octet-stream",
+      "Cache-Control": "public, max-age=3600"
+    });
+    createReadStream(assetPath).pipe(res);
   }
 
   // ── Chat Completions (OpenAI-Compatible) ──────────────────

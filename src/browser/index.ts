@@ -19,10 +19,10 @@ export {
 
 // Re-export types
 export type { 
-  BrowserToolOptions, 
   BrowserSession, 
   BrowserOptions 
 } from './session.js';
+export type { BrowserToolOptions } from './tools.js';
 
 export type { 
   VisionOptions, 

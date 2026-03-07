@@ -50,7 +50,7 @@ export interface ToolDefinition {
 
 export interface ToolResult {
   success: boolean;
-  output: string;
+  output: any;
   error?: string;
 }
 
@@ -123,6 +123,8 @@ export interface MCPConfig {
 
 // ── Config ─────────────────────────────────────────────────
 export interface AgentOverride {
+  id: string;
+  workspace?: string;
   model?: {
     primary: string;
     fallbacks?: string[];
@@ -136,6 +138,23 @@ export interface AgentOverride {
       enabled: boolean;
     };
   };
+  default?: boolean;
+}
+
+export interface AgentBinding {
+  agentId: string;
+  match: {
+    channel?: string;
+    accountId?: string;
+    peer?: {
+      kind: "direct" | "group";
+      id?: string;
+    };
+    guildId?: string;
+    roles?: string[];
+    teamId?: string;
+  };
+  priority?: number;
 }
 
 export interface ToolProviderConfig {
@@ -200,8 +219,54 @@ export interface KrabConfig {
       timeoutSeconds?: number;
       contextTokens?: number;
       maxConcurrent?: number;
+      // Streaming configuration
+      blockStreamingDefault?: "on" | "off";
+      blockStreamingBreak?: "text_end" | "message_end";
+      blockStreamingChunk?: {
+        minChars: number;
+        maxChars: number;
+        breakPreference?: "paragraph" | "newline" | "sentence" | "whitespace";
+      };
+      blockStreamingCoalesce?: {
+        minChars?: number;
+        maxChars?: number;
+        idleMs?: number;
+      };
+      humanDelay?: "off" | "natural" | { minMs: number; maxMs: number };
+      // Session management
+      dmScope?: "main" | "per-channel-peer" | "per-account-channel-peer";
+      sessionMaintenance?: {
+        mode?: "warn" | "enforce";
+        pruneAfter?: string; // e.g., "30d"
+        maxEntries?: number;
+        rotateBytes?: string; // e.g., "10mb"
+        resetArchiveRetention?: string;
+        maxDiskBytes?: string;
+        highWaterBytes?: string;
+      };
+      sessionPruning?: {
+        enabled?: boolean;
+        mode?: "cache-ttl";
+        ttl?: string; // e.g., "5m"
+        keepLastAssistants?: number;
+        contextWindowEstimation?: number;
+      };
+      messages?: {
+        inbound?: {
+          debounceMs?: number;
+          byChannel?: Record<string, number>;
+        };
+        groupChat?: {
+          historyLimit?: number;
+        };
+        queue?: {
+          mode?: "interrupt" | "steer" | "followup" | "collect";
+          byChannel?: Record<string, "interrupt" | "steer" | "followup" | "collect">;
+        };
+      };
     };
-    list?: Record<string, AgentOverride>;
+    list?: AgentOverride[];
+    bindings?: AgentBinding[];
   };
   reflector?: ReflectionOptions;
   gateway?: {

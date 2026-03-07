@@ -405,7 +405,7 @@ export const analyticsTracingTool: ToolDefinition = {
     spanId: z.string().optional().describe("Span ID for operations"),
     eventName: z.string().optional().describe("Event name to add"),
     attributes: z
-      .record(z.any())
+      .record(z.string(), z.any())
       .optional()
       .describe("Attributes for trace or event"),
   }),
@@ -459,7 +459,7 @@ export const analyticsTracingTool: ToolDefinition = {
             throw new Error("Span ID and event name are required");
           }
 
-          analyticsTools.analytics.addTraceEvent(
+          analyticsTools.getAnalytics().addTraceEvent(
             args.spanId,
             args.eventName,
             args.attributes || {},
@@ -482,7 +482,7 @@ export const analyticsTracingTool: ToolDefinition = {
             throw new Error("Span ID is required");
           }
 
-          const trace = analyticsTools.analytics.getTraceTree(args.spanId);
+          const trace = analyticsTools.getAnalytics().getTraceTree(args.spanId);
           return {
             success: !!trace,
             output: trace ? JSON.stringify(trace, null, 2) : "Trace not found",

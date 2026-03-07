@@ -4,13 +4,18 @@
 import { Command } from "commander";
 import pc from "picocolors";
 import * as readline from "node:readline/promises";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import { loadConfig } from "./core/config.js";
 import { Agent } from "./core/agent.js";
 import { registry } from "./tools/registry.js";
+import { pluginLoader } from "./plugins/loader.js";
 import { logger } from "./utils/logger.js";
 import { GatewayServer } from "./gateway/server.js";
 import { runChat } from "./tui/chat.js";
-import { runOnboarding } from "./cli/onboarding.js";
+import { runOnboarding, type OnboardingOptions } from "./cli/onboarding.js";
 import {
   gatewayCmd,
   configCmd,
@@ -18,6 +23,11 @@ import {
   mcpCmd,
   jobCmd,
 } from "./cli/gateway-commands.js";
+import { hooksCmd } from "./cli/hooks-commands.js";
+import { bootstrapCmd } from "./cli/bootstrap-commands.js";
+import { sessionCmd } from "./cli/session-commands.js";
+import { agentCmd } from "./cli/agent-commands.js";
+import { presenceCmd } from "./cli/presence-commands.js";
 
 // ── Register Built-in Tools ────────────────────────────────
 import { datetimeTool } from "./tools/built-in/datetime.js";
@@ -56,8 +66,21 @@ for (const tool of videoTools) {
 
 // ── Register Voice Tools ────────────────────────────────
 import { voiceTools } from "./voice/tools.js";
+import { sessionTools } from "./tools/built-in/session-tools.js";
 
 for (const tool of voiceTools) {
+  registry.register(tool);
+}
+
+// ── Register Session Tools ───────────────────────────────
+for (const tool of sessionTools) {
+  registry.register(tool);
+}
+
+// ── Register Memory Tools ────────────────────────────────
+import { memoryTools } from "./tools/built-in/memory-tools.js";
+
+for (const tool of memoryTools) {
   registry.register(tool);
 }
 
@@ -139,7 +162,17 @@ for (const tool of securityTools) {
 }
 
 // ── Plugin System ───────────────────────────────────────────────────
-import { pluginLoader } from "./plugins/loader.js";
+import { initializeAgentManager } from "./agent/manager.js";
+
+// ── Initialize Multi-Agent System ───────────────────────────
+const config = loadConfig();
+initializeAgentManager(config);
+
+// ── Initialize Presence Tracking ────────────────────────────
+presenceTracker.updatePresence({
+  mode: "cli",
+  reason: "self"
+});
 
 // ── Register Obsidian Tools ───────────────────────────────────────────────
 import { obsidianTools } from "./tools/built-in/obsidian.js";
@@ -187,10 +220,60 @@ import { execApprovalsCommand } from "./cli/exec-approvals.js";
 // ── CLI Program (must be before addCommand calls) ────────
 const program = new Command();
 
+function applyGlobalRuntimeOptions(opts: {
+  dev?: boolean;
+  profile?: string;
+  logLevel?: string;
+}): void {
+  if (opts.dev) {
+    const devRoot = join(homedir(), ".krab-dev");
+    if (!existsSync(devRoot)) {
+      mkdirSync(devRoot, { recursive: true });
+    }
+    process.env.KRAB_PROFILE = "dev";
+    process.env.KRAB_STATE_DIR = devRoot;
+    process.env.KRAB_DATA_DIR = devRoot;
+  }
+
+  if (opts.profile) {
+    const profileRoot = join(homedir(), `.krab-${opts.profile}`);
+    if (!existsSync(profileRoot)) {
+      mkdirSync(profileRoot, { recursive: true });
+    }
+    process.env.KRAB_PROFILE = opts.profile;
+    process.env.KRAB_STATE_DIR = profileRoot;
+    process.env.KRAB_DATA_DIR = profileRoot;
+  }
+
+  if (opts.logLevel) {
+    process.env.KRAB_LOG_LEVEL = opts.logLevel;
+  }
+}
+
 program
   .name("krab")
   .description("🦀 Krab — Lightweight AGI Agent Framework")
+  .option("--dev", "Use isolated ~/.krab-dev state profile")
+  .option("--profile <name>", "Use named profile state under ~/.krab-<name>")
+  .option(
+    "--log-level <level>",
+    "Global log level (silent|fatal|error|warn|info|debug|trace)",
+  )
   .version("0.1.0");
+
+program.hook("preAction", (cmd) => {
+  const opts = cmd.optsWithGlobals() as {
+    dev?: boolean;
+    profile?: string;
+    logLevel?: string;
+  };
+  applyGlobalRuntimeOptions(opts);
+});
+
+program.addHelpText(
+  "after",
+  `\nExamples:\n  krab models --help\n    Show model command details.\n  krab status --probe\n    Show channel readiness and missing environment keys.\n  krab message ai "สรุประบบล่าสุด"\n    Send one live prompt to the configured provider.\n  krab gateway start --port 18789\n    Start Gateway service on loopback.\n  krab --dev gateway start\n    Run gateway with isolated dev profile/state.\n  krab daemon start\n    Start background gateway service.\n\nDocs: https://docs.openclaw.ai/cli\n`,
+);
 
 // Now add subcommands
 program.addCommand(createSchedulerCommands());
@@ -220,7 +303,11 @@ program.addCommand(nodesCommand);
 program.addCommand(pluginsCommand);
 program.addCommand(execApprovalsCommand);
 program.addCommand(voicecallCommand);
-program.addCommand(hooksCommand);
+program.addCommand(hooksCmd);
+program.addCommand(bootstrapCmd);
+program.addCommand(sessionCmd);
+program.addCommand(agentCmd);
+program.addCommand(presenceCmd);
 program.addCommand(obsidianCommand);
 
 // ── Handle Special Commands ────────────────────────────────
@@ -348,17 +435,138 @@ program
   .description("Start interactive chat with Krab (classic mode)")
   .action(() => runChat());
 
+program.command("tui").description("Alias for interactive chat TUI").action(() => runChat());
+
+function normalizeOnboardOptions(options: any): OnboardingOptions {
+  const channels = typeof options.channels === "string"
+    ? options.channels
+        .split(",")
+        .map((v: string) => v.trim())
+        .filter(Boolean)
+    : undefined;
+
+  return {
+    mode: options.mode,
+    flow: options.flow,
+    workspace: options.workspace,
+    nonInteractive: options.nonInteractive,
+    acceptRisk: options.acceptRisk,
+    gatewayPort: options.gatewayPort ? parseInt(String(options.gatewayPort), 10) : undefined,
+    gatewayBind: options.gatewayBind,
+    gatewayAuth: options.gatewayAuth,
+    gatewayToken: options.gatewayToken,
+    remoteUrl: options.remoteUrl,
+    remoteToken: options.remoteToken,
+    provider: options.provider,
+    model: options.model,
+    apiKey: options.apiKey,
+    channels,
+    skipChannels: options.skipChannels,
+    skipSkills: options.skipSkills,
+    skipHealth: options.skipHealth,
+    installDaemon: options.installDaemon,
+  };
+}
+
+function applyOnboardFlags(cmd: Command): Command {
+  return cmd
+    .option("--mode <mode>", "Onboarding mode (local|remote)", "local")
+    .option("--flow <flow>", "Wizard flow (quickstart|advanced)", "quickstart")
+    .option("--workspace <path>", "Workspace directory override")
+    .option("--non-interactive", "Run onboarding without prompts")
+    .option("--accept-risk", "Acknowledge risk for non-interactive runs")
+    .option("--gateway-port <port>", "Gateway port (local mode)")
+    .option("--gateway-bind <bind>", "Gateway bind (loopback|lan)")
+    .option("--gateway-auth <auth>", "Gateway auth (token|none)")
+    .option("--gateway-token <token>", "Gateway token value")
+    .option("--remote-url <url>", "Remote gateway URL (remote mode)")
+    .option("--remote-token <token>", "Remote gateway token (remote mode)")
+    .option(
+      "--provider <provider>",
+      "Provider (google|openai|anthropic|openrouter|kilocode|ollama)",
+    )
+    .option("--model <id>", "Default model ID")
+    .option("--api-key <key>", "Provider API key/base URL (for ollama)")
+    .option("--channels <list>", "Comma-separated channels (telegram,whatsapp,discord,line,signal,imessage)")
+    .option("--skip-channels", "Skip channels configuration")
+    .option("--skip-skills", "Skip skills step")
+    .option("--skip-health", "Skip health check step")
+    .option("--install-daemon", "Enable daemon in onboarding output config");
+}
+
+applyOnboardFlags(
+  program
+    .command("configure")
+    .description("Alias for onboarding wizard"),
+).action(async (options) => runOnboarding(normalizeOnboardOptions(options)));
+
 program
-  .command("chat")
-  .description("Start interactive chat with Krab (classic mode)")
-  .action(() => runChat());
+  .command("health")
+  .description("Quick gateway health check")
+  .action(async () => {
+    try {
+      const response = await fetch("http://127.0.0.1:18789/healthz", {
+        method: "GET",
+      });
+      if (response.ok) {
+        console.log(pc.green("✅ Gateway health: OK"));
+      } else {
+        console.log(pc.yellow(`⚠️  Gateway health: ${response.status}`));
+      }
+    } catch {
+      console.log(pc.red("❌ Gateway health: unavailable"));
+    }
+  });
+
+program
+  .command("dashboard")
+  .description("Show Control UI URL")
+  .action(() => {
+    const url = "http://127.0.0.1:18789/krab";
+    console.log(pc.cyan(`Control UI: ${url}`));
+  });
+
+program
+  .command("sessions")
+  .description("Alias for 'session list'")
+  .action(() => {
+    execFileSync(process.execPath, [process.argv[1], "session", "list"], {
+      stdio: "inherit",
+    });
+  });
+
+const channelsTopCommand = new Command("channels")
+  .description("Manage connected chat channels")
+  .addCommand(
+    new Command("status")
+      .description("Check channel readiness")
+      .option("--probe", "Probe channel env readiness")
+      .action((options) => {
+        const args = [process.argv[1], "status"];
+        if (options.probe) args.push("--probe");
+        execFileSync(process.execPath, args, {
+          stdio: "inherit",
+        });
+      }),
+  )
+  .addCommand(
+    new Command("login")
+      .description("Channel login guidance")
+      .action(() => {
+        console.log(pc.cyan("Use channel-specific setup via onboarding:"));
+        console.log(pc.dim("  krab onboard"));
+      }),
+  );
+
+program.addCommand(channelsTopCommand);
 
 // gatewayCmd, configCmd, channelsCmd, mcpCmd, jobCmd already added above
 
-program
-  .command("onboard")
-  .description("Run interactive onboarding wizard")
-  .action(() => runOnboarding());
+applyOnboardFlags(
+  program
+    .command("onboard")
+    .description("Run onboarding wizard"),
+).action(async (options) => runOnboarding(normalizeOnboardOptions(options)));
 
 program
   .command("ask")

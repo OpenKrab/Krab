@@ -8,8 +8,11 @@ import {
   MediaAttachment,
   MultiModalMessage,
 } from "./base.js";
-import { multiModalProcessor } from "../multimodal/index.js";
+import { defaultMediaProcessor, multiModalProcessor } from "../multimodal/index.js";
 import { logger } from "../utils/logger.js";
+import { createHmac, timingSafeEqual } from "crypto";
+import * as fs from "fs";
+import * as path from "path";
 
 // ── LINE Message Types ────────────────────────────────────────
 interface LINEMessage {
@@ -58,10 +61,9 @@ export class LINEChannel extends BaseChannel {
     }
 
     try {
-      // TODO: Implement Express webhook server
-      // For now, just mark as running
+      await this.getBotInfo();
       this.isRunning = true;
-      logger.info("[LINE] Channel started (placeholder implementation)");
+      logger.info("[LINE] Channel started");
       logger.info(`[LINE] Webhook path: ${this.webhookUrl}`);
     } catch (error) {
       logger.error("[LINE] Failed to start channel:", error);
@@ -80,12 +82,14 @@ export class LINEChannel extends BaseChannel {
     if (!this.isRunning) {
       throw new Error("LINE channel is not running");
     }
+    if (!recipient) {
+      throw new Error("LINE recipient user/group ID is required");
+    }
 
     try {
-      // TODO: Implement actual LINE Messaging API call
-      logger.debug(
-        `[LINE] Would send message to ${recipient || "all"}: ${message}`,
-      );
+      await this.callLinePush(recipient, [
+        { type: "text", text: message }
+      ]);
     } catch (error) {
       logger.error("[LINE] Failed to send message:", error);
       throw error;
@@ -102,20 +106,20 @@ export class LINEChannel extends BaseChannel {
     }
 
     try {
-      // TODO: Implement actual LINE Messaging API call
-      // Check file size limit (default 10MB)
       const maxSize = (this.config.mediaMaxMb || 10) * 1024 * 1024;
       if (typeof file === "string") {
-        // URL file - no size check needed
       } else if (file.length > maxSize) {
         throw new Error(
           `File size exceeds limit of ${this.config.mediaMaxMb || 10}MB`,
         );
       }
 
-      logger.debug(
-        `[LINE] Would send file ${filename} to ${recipient || "all"}`,
-      );
+      const url = this.ensurePublicMediaUrl(file, filename);
+      await this.callLinePush(recipient, [{
+        type: "file",
+        originalContentUrl: url,
+        fileName: filename
+      }]);
     } catch (error) {
       logger.error("[LINE] Failed to send file:", error);
       throw error;
@@ -134,7 +138,7 @@ export class LINEChannel extends BaseChannel {
 
     try {
       // Process image before sending
-      const processed = await multiModalProcessor.mediaProcessor.processImage(
+      const processed = await defaultMediaProcessor.processImage(
         imageBuffer,
         filename,
       );
@@ -147,14 +151,17 @@ export class LINEChannel extends BaseChannel {
         );
       }
 
-      // TODO: Implement actual LINE Messaging API call for image
-      logger.debug(
-        `[LINE] Would send image ${filename} (${processed.metadata.size} bytes) to ${recipient || "all"}`,
-      );
+      const url = this.ensurePublicMediaUrl(processed.buffer, filename);
+      await this.callLinePush(recipient, [
+        {
+          type: "image",
+          originalContentUrl: url,
+          previewImageUrl: url
+        }
+      ]);
 
       if (caption) {
-        // Send caption as separate text message
-        logger.debug(`[LINE] Image caption: ${caption}`);
+        await this.callLinePush(recipient, [{ type: "text", text: caption }]);
       }
     } catch (error) {
       logger.error("[LINE] Failed to send image:", error);
@@ -174,7 +181,7 @@ export class LINEChannel extends BaseChannel {
 
     try {
       // Process audio before sending
-      const processed = await multiModalProcessor.mediaProcessor.processAudio(
+      const processed = await defaultMediaProcessor.processAudio(
         audioBuffer,
         filename,
       );
@@ -187,13 +194,17 @@ export class LINEChannel extends BaseChannel {
         );
       }
 
-      // TODO: Implement actual LINE Messaging API call for audio
-      logger.debug(
-        `[LINE] Would send audio ${filename} (${processed.metadata.duration}s) to ${recipient || "all"}`,
-      );
+      const url = this.ensurePublicMediaUrl(processed.buffer, filename);
+      await this.callLinePush(recipient, [
+        {
+          type: "audio",
+          originalContentUrl: url,
+          duration: Math.max(1000, Math.round((processed.metadata.duration || 1) * 1000))
+        }
+      ]);
 
       if (caption) {
-        logger.debug(`[LINE] Audio caption: ${caption}`);
+        await this.callLinePush(recipient, [{ type: "text", text: caption }]);
       }
     } catch (error) {
       logger.error("[LINE] Failed to send audio:", error);
@@ -213,7 +224,7 @@ export class LINEChannel extends BaseChannel {
 
     try {
       // Process video before sending
-      const processed = await multiModalProcessor.mediaProcessor.processVideo(
+      const processed = await defaultMediaProcessor.processVideo(
         videoBuffer,
         filename,
       );
@@ -226,49 +237,20 @@ export class LINEChannel extends BaseChannel {
         );
       }
 
-      // TODO: Implement actual LINE Messaging API call for video
-      logger.debug(
-        `[LINE] Would send video ${filename} (${processed.metadata.duration}s) to ${recipient || "all"}`,
-      );
+      const url = this.ensurePublicMediaUrl(processed.buffer, filename);
+      await this.callLinePush(recipient, [
+        {
+          type: "video",
+          originalContentUrl: url,
+          previewImageUrl: url
+        }
+      ]);
 
       if (caption) {
-        logger.debug(`[LINE] Video caption: ${caption}`);
+        await this.callLinePush(recipient, [{ type: "text", text: caption }]);
       }
     } catch (error) {
       logger.error("[LINE] Failed to send video:", error);
-      throw error;
-    }
-  }
-
-  async sendFile(
-    fileBuffer: Buffer,
-    filename: string,
-    caption?: string,
-    recipient?: string,
-  ): Promise<void> {
-    if (!this.isRunning) {
-      throw new Error("LINE channel is not running");
-    }
-
-    try {
-      // Check size limit
-      const maxSize = this.getMediaLimits().maxFileSize;
-      if (fileBuffer.length > maxSize) {
-        throw new Error(
-          `File size exceeds LINE limit of ${maxSize / (1024 * 1024)}MB`,
-        );
-      }
-
-      // TODO: Implement actual LINE Messaging API call for file
-      logger.debug(
-        `[LINE] Would send file ${filename} (${fileBuffer.length} bytes) to ${recipient || "all"}`,
-      );
-
-      if (caption) {
-        logger.debug(`[LINE] File caption: ${caption}`);
-      }
-    } catch (error) {
-      logger.error("[LINE] Failed to send file:", error);
       throw error;
     }
   }
@@ -282,7 +264,7 @@ export class LINEChannel extends BaseChannel {
     return true; // Can analyze images sent to channel
   }
 
-  async processVoiceMessage(audioBuffer: Buffer): Promise<{
+  async transcribeVoiceMessage(audioBuffer: Buffer): Promise<{
     transcription: string;
     response: string;
   }> {
@@ -304,7 +286,7 @@ export class LINEChannel extends BaseChannel {
     }
   }
 
-  async analyzeImage(imageBuffer: Buffer): Promise<string> {
+  async analyzeImageBuffer(imageBuffer: Buffer): Promise<string> {
     try {
       return await multiModalProcessor.analyzeImage(imageBuffer);
     } catch (error) {
@@ -342,15 +324,15 @@ export class LINEChannel extends BaseChannel {
       const signature = req.headers["x-line-signature"];
       const body = req.body;
 
-      // TODO: Implement LINE signature verification
-      // For now, just process the events
-      logger.debug("[LINE] Webhook received");
+      if (!this.verifySignature(body, signature)) {
+        res.status(401).send("Invalid signature");
+        return;
+      }
 
-      // Process LINE events
       if (body && body.events) {
         for (const event of body.events) {
           const baseMessage = this.convertToBaseMessage(event);
-          await this.handleIncomingMessage(baseMessage);
+          await this.processIncomingMessage(baseMessage);
         }
       }
 
@@ -383,13 +365,14 @@ export class LINEChannel extends BaseChannel {
 
   private async handleLINEWebhook(body: any, signature: string): Promise<void> {
     try {
-      // TODO: Implement LINE signature verification
-      // For now, just process the events
+      if (!this.verifySignature(body, signature)) {
+        throw new Error("Invalid LINE webhook signature");
+      }
       const lineMsg = body as LINEMessage;
 
       for (const event of lineMsg.events) {
         const baseMessage = this.convertToBaseMessage(event);
-        await this.handleIncomingMessage(baseMessage);
+        await this.processIncomingMessage(baseMessage);
       }
     } catch (error) {
       logger.error("[LINE] Error handling webhook:", error);
@@ -467,12 +450,88 @@ export class LINEChannel extends BaseChannel {
 
   // ── LINE-specific Methods ───────────────────────────────────
   async getBotInfo(): Promise<any> {
-    // TODO: Implement actual LINE Bot API call
     if (!this.isRunning) {
-      throw new Error("Channel is not running");
+      const response = await fetch("https://api.line.me/v2/bot/info", {
+        headers: {
+          Authorization: `Bearer ${this.getChannelAccessToken()}`
+        }
+      });
+      const data: any = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.message || "Failed to fetch LINE bot info");
+      }
+      return data;
     }
 
-    return { displayName: "Krab Bot" };
+    const response = await fetch("https://api.line.me/v2/bot/info", {
+      headers: {
+        Authorization: `Bearer ${this.getChannelAccessToken()}`
+      }
+    });
+    const data: any = await response.json();
+    if (!response.ok) {
+      throw new Error(data?.message || "Failed to fetch LINE bot info");
+    }
+    return data;
+  }
+
+  private verifySignature(body: any, signatureHeader: string | string[] | undefined): boolean {
+    const secret = this.getChannelSecret();
+    if (!secret || !signatureHeader || Array.isArray(signatureHeader)) {
+      return false;
+    }
+
+    const payload = typeof body === "string" ? body : JSON.stringify(body);
+    const expected = createHmac("sha256", secret).update(payload).digest("base64");
+
+    return timingSafeEqual(Buffer.from(expected), Buffer.from(signatureHeader));
+  }
+
+  private async callLinePush(recipient: string | undefined, messages: any[]): Promise<void> {
+    if (!recipient) {
+      throw new Error("LINE recipient user/group ID is required");
+    }
+
+    const response = await fetch("https://api.line.me/v2/bot/message/push", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.getChannelAccessToken()}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        to: recipient,
+        messages
+      })
+    });
+
+    if (!response.ok) {
+      const data: any = await response.json().catch(() => ({}));
+      throw new Error(data?.message || "LINE push message failed");
+    }
+  }
+
+  private ensurePublicMediaUrl(file: Buffer | string, filename: string): string {
+    if (typeof file === "string") {
+      return file;
+    }
+
+    const publicBaseUrl = process.env.KRAB_PUBLIC_BASE_URL;
+    if (!publicBaseUrl) {
+      throw new Error(
+        `LINE requires KRAB_PUBLIC_BASE_URL to expose uploaded media for ${filename}.`,
+      );
+    }
+
+    const mediaDir = path.join(process.cwd(), "generated-images", "line-media");
+    if (!fs.existsSync(mediaDir)) {
+      fs.mkdirSync(mediaDir, { recursive: true });
+    }
+
+    const safeName = `${Date.now()}-${filename.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    const outputPath = path.join(mediaDir, safeName);
+    fs.writeFileSync(outputPath, file);
+
+    return `${publicBaseUrl.replace(/\/$/, "")}/generated-images/line-media/${safeName}`;
   }
 }
 

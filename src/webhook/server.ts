@@ -174,6 +174,51 @@ export class WebhookServer {
       }
     });
 
+    // Discord Interactions webhook (for buttons, select menus, modals)
+    this.app.post("/discord/interactions", async (req: Request, res: Response) => {
+      try {
+        const discordChannel = channelRegistry.getChannel("discord");
+        if (discordChannel && typeof discordChannel.handleWebhook === "function") {
+          await discordChannel.handleWebhook(req, res);
+        } else {
+          res.status(404).send("Discord channel not available");
+        }
+      } catch (error) {
+        logger.error("[Webhook] Discord interactions webhook error:", error);
+        res.status(500).send("Internal Server Error");
+      }
+    });
+
+    // Discord webhook (alternative to Gateway)
+    this.app.post("/discord/webhook", async (req: Request, res: Response) => {
+      try {
+        const discordChannel = channelRegistry.getChannel("discord");
+        if (discordChannel && typeof discordChannel.handleWebhook === "function") {
+          await discordChannel.handleWebhook(req, res);
+        } else {
+          res.status(404).send("Discord channel not available");
+        }
+      } catch (error) {
+        logger.error("[Webhook] Discord webhook error:", error);
+        res.status(500).send("Internal Server Error");
+      }
+    });
+
+    // WhatsApp Business API webhook
+    this.app.post("/whatsapp/webhook", async (req: Request, res: Response) => {
+      try {
+        const whatsappChannel = channelRegistry.getChannel("whatsapp");
+        if (whatsappChannel && typeof whatsappChannel.handleWebhook === "function") {
+          await whatsappChannel.handleWebhook(req, res);
+        } else {
+          res.status(404).send("WhatsApp channel not available");
+        }
+      } catch (error) {
+        logger.error("[Webhook] WhatsApp webhook error:", error);
+        res.status(500).send("Internal Server Error");
+      }
+    });
+
     // Generic webhook handler for future channels
     this.app.post("/:channel/webhook", async (req: Request, res: Response) => {
       try {

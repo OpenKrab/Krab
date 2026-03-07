@@ -21,7 +21,10 @@ export const taglines: TaglineCollection = {
     "Effortless intelligence",
     "Powerful simplicity",
     "Your AI partner",
-    "Intelligent by design"
+    "Intelligent by design",
+    "Ship first, overthink later",
+    "Less talk, more output",
+    "If it works, it ships"
   ],
   
   minimal: [
@@ -52,7 +55,12 @@ export const taglines: TaglineCollection = {
     "Fun with AI",
     "Your AI friend",
     "Making AI fun!",
-    "Playful intelligence"
+    "Playful intelligence",
+    "Works on my machine, trust me",
+    "Bug? That's a surprise feature",
+    "Coffee in, solutions out",
+    "Chaos in, clean output out",
+    "Your drama-free code buddy"
   ],
   
   tech: [

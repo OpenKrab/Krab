@@ -261,7 +261,7 @@ export class DiscordChannel extends BaseChannel {
         // Skip messages from other bots unless explicitly allowed
         if (message.author.bot && !this.config.allowBots) return;
 
-        await this.handleIncomingMessage(message);
+        await this.handleDiscordMessage(message);
       } catch (error) {
         logger.error("[Discord] Error handling message:", error);
       }
@@ -288,9 +288,9 @@ export class DiscordChannel extends BaseChannel {
     });
   }
 
-  private async handleIncomingMessage(message: DiscordMessage): Promise<void> {
+  private async handleDiscordMessage(message: DiscordMessage): Promise<void> {
     const baseMessage = await this.convertToBaseMessage(message);
-    await this.handleIncomingMessage(baseMessage);
+    await this.processIncomingMessage(baseMessage);
   }
 
   private async convertToBaseMessage(message: DiscordMessage): Promise<MultiModalMessage> {
@@ -364,6 +364,201 @@ export class DiscordChannel extends BaseChannel {
     return "file";
   }
 
+  // ── Webhook Handler (for Discord Interactions) ──────────────────
+  async handleWebhook(req: any, res: any): Promise<void> {
+    try {
+      const { type, data, member, user, channel_id, guild_id, message } = req.body;
+
+      // Discord Interactions (buttons, select menus, modals)
+      if (type === 1) {
+        // Ping - respond with Pong
+        res.json({ type: 1 });
+        return;
+      }
+
+      if (type === 2) {
+        // Application Command (slash command)
+        const commandName = data?.name;
+        const options = data?.options || [];
+        
+        logger.info(`[Discord] Slash command: /${commandName}`);
+        
+        // Process command and send response
+        const response = await this.handleSlashCommand(commandName, options, member, user, channel_id);
+        
+        res.json({
+          type: 4, // Channel Message with Source
+          data: {
+            content: response,
+            flags: 0
+          }
+        });
+        return;
+      }
+
+      if (type === 3) {
+        // Message Component (button, select menu)
+        const componentType = data?.component_type;
+        const customId = data?.custom_id;
+        const values = data?.values || [];
+        
+        logger.info(`[Discord] Component interaction: ${customId}`);
+        
+        // Process component interaction
+        const response = await this.handleComponentInteraction(customId, values, member, message);
+        
+        res.json({
+          type: 4,
+          data: {
+            content: response,
+            flags: 0
+          }
+        });
+        return;
+      }
+
+      if (type === 4) {
+        // Modal Submit
+        const customId = data?.custom_id;
+        const inputs = data?.components || [];
+        
+        logger.info(`[Discord] Modal submit: ${customId}`);
+        
+        const response = await this.handleModalSubmit(customId, inputs, member);
+        
+        res.json({
+          type: 4,
+          data: {
+            content: response,
+            flags: 0
+          }
+        });
+        return;
+      }
+
+      // Regular message via webhook (not interaction)
+      if (message && data?.content) {
+        const baseMessage = this.convertWebhookToMessage(req.body);
+        await this.processIncomingMessage(baseMessage);
+      }
+
+      res.status(200).send("OK");
+    } catch (error) {
+      logger.error("[Discord] Webhook error:", error);
+      res.status(500).send("Internal Server Error");
+    }
+  }
+
+  private async handleSlashCommand(
+    commandName: string,
+    options: any[],
+    member: any,
+    user: any,
+    channelId: string
+  ): Promise<string> {
+    // Build command input from options
+    let input = `/${commandName}`;
+    for (const opt of options) {
+      if (opt.value !== undefined) {
+        input += ` ${opt.name}: ${opt.value}`;
+      }
+    }
+
+    // Create a message object for processing
+    const message: BaseMessage = {
+      id: `cmd_${Date.now()}`,
+      timestamp: new Date(),
+      sender: {
+        id: member?.id || user?.id || "unknown",
+        username: member?.nick || user?.username,
+        displayName: member?.displayName || user?.global_name
+      },
+      channel: "discord",
+      content: input,
+      type: "text",
+      metadata: {
+        channelId,
+        guildId: member?.guild_id
+      }
+    };
+
+    await this.processIncomingMessage(message);
+    return "Command processed";
+  }
+
+  private async handleComponentInteraction(
+    customId: string,
+    values: string[],
+    member: any,
+    message: any
+  ): Promise<string> {
+    const input = `[Interaction: ${customId}] ${values.join(", ")}`;
+    
+    const msg: BaseMessage = {
+      id: `int_${Date.now()}`,
+      timestamp: new Date(),
+      sender: {
+        id: member?.id || "unknown",
+        username: member?.nick || member?.user?.username
+      },
+      channel: "discord",
+      content: input,
+      type: "text"
+    };
+
+    await this.processIncomingMessage(msg);
+    return "Interaction processed";
+  }
+
+  private async handleModalSubmit(
+    customId: string,
+    inputs: any[],
+    member: any
+  ): Promise<string> {
+    let input = `[Modal: ${customId}]\n`;
+    for (const row of inputs) {
+      for (const comp of row.components || []) {
+        input += `${comp.label}: ${comp.value}\n`;
+      }
+    }
+
+    const msg: BaseMessage = {
+      id: `modal_${Date.now()}`,
+      timestamp: new Date(),
+      sender: {
+        id: member?.id || "unknown",
+        username: member?.nick || member?.user?.username
+      },
+      channel: "discord",
+      content: input,
+      type: "text"
+    };
+
+    await this.processIncomingMessage(msg);
+    return "Modal submitted";
+  }
+
+  private convertWebhookToMessage(webhookData: any): BaseMessage {
+    const { message, member, channel_id, guild_id } = webhookData;
+    
+    return {
+      id: message?.id || `wh_${Date.now()}`,
+      timestamp: new Date(message?.timestamp || Date.now()),
+      sender: {
+        id: message?.author?.id || member?.id || "unknown",
+        username: message?.author?.username || member?.nick,
+        displayName: message?.author?.global_name || member?.displayName
+      },
+      channel: "discord",
+      content: message?.content || "",
+      type: "text",
+      metadata: {
+        channelId: channel_id,
+        guildId: guild_id
+      }
+    };
+  }
+
   // ── Multi-modal Interface Implementation ────────────────────
   supportsVoiceMessages(): boolean {
     return false; // Discord doesn't have voice messages, but has voice channels
@@ -373,7 +568,7 @@ export class DiscordChannel extends BaseChannel {
     return true; // Can analyze images sent to channels
   }
 
-  async processVoiceMessage(audioBuffer: Buffer): Promise<{
+  async transcribeVoiceMessage(audioBuffer: Buffer): Promise<{
     transcription: string;
     response: string;
   }> {
@@ -384,7 +579,7 @@ export class DiscordChannel extends BaseChannel {
     };
   }
 
-  async analyzeImage(imageBuffer: Buffer): Promise<string> {
+  async analyzeImageBuffer(imageBuffer: Buffer): Promise<string> {
     try {
       return await multiModalProcessor.analyzeImage(imageBuffer);
     } catch (error) {

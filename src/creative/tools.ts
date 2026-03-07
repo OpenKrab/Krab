@@ -246,6 +246,10 @@ export class CreativeTools {
     }
   }
 
+  deleteImage(imageId: string): boolean {
+    return this.imageGenerator.deleteImage(imageId);
+  }
+
   // Placeholder methods for media processing simulation
   private async simulateMediaAnalysis(filePath: string, analysisType: string): Promise<any> {
     await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
@@ -473,7 +477,7 @@ export const generatedImagesTool: Tool = {
             error: "Image ID required for deletion"
           };
         }
-        const deleted = creativeTools.imageGenerator.deleteImage(args.imageId);
+        const deleted = creativeTools.deleteImage(args.imageId);
         return {
           success: deleted,
           output: deleted ? `Image ${args.imageId} deleted successfully` : `Failed to delete image ${args.imageId}`

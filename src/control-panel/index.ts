@@ -875,7 +875,7 @@ export class ControlPanel {
 
       '/analytics/stats': async (req: any, res: any) => {
         try {
-          const stats = await defaultStateManager.messageStore.getStats();
+          const stats = await (defaultStateManager as any).messageStore.getStats();
 
           res.json({
             totalMessages: stats.totalMessages,

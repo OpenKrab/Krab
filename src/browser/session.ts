@@ -53,9 +53,15 @@ export class BrowserSessionManager {
     logger.info(`[BrowserSession] Creating session: ${name} (${sessionId})`);
 
     try {
-      const browser = await chromium.launch(mergedOptions);
+      const browser = await chromium.launch({
+        headless: mergedOptions.headless,
+        slowMo: mergedOptions.slowMo,
+      });
       const context = await browser.newContext({
-        ...mergedOptions,
+        viewport: mergedOptions.viewport,
+        userAgent:
+          mergedOptions.userAgent ||
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         recordVideo: {
           dir: path.join(process.cwd(), 'browser-recordings'),
           size: { width: 1920, height: 1080 }
@@ -78,7 +84,7 @@ export class BrowserSessionManager {
       this.sessions.set(sessionId, session);
 
       // Setup page event handlers
-      await this.setupPageHandlers(page, sessionId);
+      await this.setupPageHandlers(page, context, sessionId);
 
       logger.info(`[BrowserSession] Session created: ${sessionId}`);
       return session;
@@ -89,7 +95,7 @@ export class BrowserSessionManager {
     }
   }
 
-  private async setupPageHandlers(page: Page, sessionId: string): Promise<void> {
+  private async setupPageHandlers(page: Page, context: BrowserContext, sessionId: string): Promise<void> {
     // Handle console logs
     page.on('console', (msg) => {
       logger.info(`[BrowserSession:${sessionId}] Console:`, msg);
@@ -102,19 +108,16 @@ export class BrowserSessionManager {
 
     // Handle request failures
     page.on('requestfailed', (request) => {
-      logger.error(`[BrowserSession:${sessionId}] Request failed:`, request.url(), request.failure().errorText());
+      logger.error(
+        `[BrowserSession:${sessionId}] Request failed:`,
+        request.url(),
+        request.failure()?.errorText ?? 'unknown error',
+      );
     });
 
-    // Set default user agent and stealth
-    await page.setUserAgent(this.defaultOptions.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-    await page.evaluateOnNewDocument(() => {
-      // Add stealth scripts
-      page.addStyleTag({
-        content: `
-          /* Hide automation indicators */
-          .automation-styles { display: none !important; }
-          .webdriver-styles { display: none !important; }
-        `
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
       });
     });
   }
@@ -260,7 +263,7 @@ export class BrowserSessionManager {
     }
   }
 
-  async extractContent(sessionId: string, options: { 
+  async extractContent(sessionId: string, options: {
     text?: boolean; 
     html?: boolean; 
     links?: boolean; 
@@ -275,18 +278,19 @@ export class BrowserSessionManager {
     logger.info(`[BrowserSession:${sessionId}] Extracting content`);
     
     try {
-      const content = await session.page.evaluate((options) => {
+      const content = await session.page.evaluate((pageOptions) => {
+        const document = (globalThis as any).document;
         const result: any = {};
-        
-        if (options.text) {
+
+        if (pageOptions.text) {
           result.text = document.body.innerText;
         }
-        
-        if (options.html) {
+
+        if (pageOptions.html) {
           result.html = document.documentElement.outerHTML;
         }
-        
-        if (options.links) {
+
+        if (pageOptions.links) {
           const links = Array.from(document.querySelectorAll('a')).map((a: any) => ({
             text: a.innerText,
             href: a.href,
@@ -295,7 +299,7 @@ export class BrowserSessionManager {
           result.links = links;
         }
         
-        if (options.images) {
+        if (pageOptions.images) {
           const images = Array.from(document.querySelectorAll('img')).map((img: any) => ({
             src: img.src,
             alt: img.alt,
@@ -304,10 +308,10 @@ export class BrowserSessionManager {
           result.images = images;
         }
         
-        if (options.tables) {
+        if (pageOptions.tables) {
           const tables = Array.from(document.querySelectorAll('table')).map((table: any) => {
-            const rows = Array.from(table.querySelectorAll('tr')).map((tr: any) => 
-              Array.from(tr.querySelectorAll('td')).map((td: any) => td.innerText)
+            const rows = Array.from(table.querySelectorAll('tr')).map((tr: any) =>
+              Array.from(tr.querySelectorAll('th, td')).map((cell: any) => cell.innerText)
             );
             return {
               headers: rows[0] || [],
@@ -389,8 +393,8 @@ export class BrowserSessionManager {
 
     process.on('SIGINT', cleanup);
     process.on('SIGTERM', cleanup);
-    process.on('exit', cleanup);
+    process.on('exit', () => {
+      void cleanup();
+    });
   }
 }
-
-export { BrowserSession };

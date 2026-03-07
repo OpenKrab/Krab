@@ -127,7 +127,7 @@ export class CronScheduler {
   addTask(
     taskData: Omit<
       ScheduledTask,
-      "id" | "createdAt" | "updatedAt" | "lastRun" | "nextRun" | "lastResult"
+      "id" | "createdAt" | "updatedAt" | "lastRun" | "nextRun" | "lastResult" | "schedule"
     >,
   ): string {
     const task: ScheduledTask = {

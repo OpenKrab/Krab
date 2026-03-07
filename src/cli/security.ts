@@ -62,9 +62,10 @@ async function runSecurityAudit(): Promise<SecurityIssue[]> {
   // Check 2: Configuration Security
   try {
     const config = loadConfig();
+    const agentDefaults = (config as any).agents?.defaults;
 
     // Check if tools require approval
-    if (!config.agents?.defaults?.requireApproval) {
+    if (!agentDefaults?.requireApproval) {
       issues.push({
         severity: "medium",
         category: "Tool Safety",
@@ -75,7 +76,7 @@ async function runSecurityAudit(): Promise<SecurityIssue[]> {
     }
 
     // Check sandbox mode
-    if (config.agents?.defaults?.sandbox?.mode !== "non-main") {
+    if (agentDefaults?.sandbox?.mode !== "non-main") {
       issues.push({
         severity: "medium",
         category: "Sandbox",
