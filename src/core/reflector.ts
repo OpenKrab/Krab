@@ -4,6 +4,9 @@
 import { generateStructured } from "../providers/llm.js";
 import { logger } from "../utils/logger.js";
 import type { Message, KrabConfig } from "./types.js";
+import { readFileSync } from "fs";
+import { resolve } from "path";
+import { fileURLToPath } from "url";
 
 export interface ReflectionResult {
   quality: "excellent" | "good" | "needs_improvement" | "poor";
@@ -22,31 +25,20 @@ export interface ReflectionOptions {
   reflectionPrompt?: string;
 }
 
-const DEFAULT_REFLECTION_PROMPT = `You are a Reflection Agent. Your task is to evaluate the quality of another AI assistant's response.
+const __dirname = resolve(fileURLToPath(new URL(".", import.meta.url)));
+const PROMPTS_PATH = resolve(__dirname, "prompts.json");
 
-## Evaluation Criteria
-1. **Accuracy**: Is the information correct and factual?
-2. **Completeness**: Does it fully answer the user's question?
-3. **Clarity**: Is the response clear and easy to understand?
-4. **Helpfulness**: Is it genuinely helpful to the user?
-5. **Safety**: Does it avoid harmful or inappropriate content?
-
-## Response Format (JSON only)
-{
-  "quality": "excellent" | "good" | "needs_improvement" | "poor",
-  "score": 0-100,
-  "feedback": "Brief explanation of the evaluation",
-  "suggestions": ["Suggestion 1", "Suggestion 2"],
-  "shouldRetry": true/false,
-  "improvedResponse": "Optional improved version of the response"
+function loadReflectorPrompt(): string {
+  try {
+    const data = JSON.parse(readFileSync(PROMPTS_PATH, "utf-8"));
+    return data.reflector.system;
+  } catch (error) {
+    logger.error(`Failed to load reflector prompt from ${PROMPTS_PATH}`);
+    return "";
+  }
 }
 
-## Guidelines
-- Be constructive and specific in feedback
-- Only suggest improvements when truly needed
-- Consider the context and user's intent
-- Focus on substance over style
-- If the response is good, acknowledge what's good about it`;
+const DEFAULT_REFLECTION_PROMPT = loadReflectorPrompt();
 
 export class Reflector {
   private config: KrabConfig;
@@ -61,7 +53,7 @@ export class Reflector {
       maxRetries: 2,
       useSeparateModel: false,
       reflectionPrompt: DEFAULT_REFLECTION_PROMPT,
-      ...options
+      ...options,
     };
 
     if (this.options.useSeparateModel) {
@@ -74,7 +66,7 @@ export class Reflector {
     userQuery: string,
     agentResponse: string,
     conversationHistory: Message[],
-    toolCalls?: any[]
+    toolCalls?: any[],
   ): Promise<ReflectionResult> {
     if (!this.options.enabled) {
       return {
@@ -82,7 +74,7 @@ export class Reflector {
         score: 85,
         feedback: "Reflection disabled",
         suggestions: [],
-        shouldRetry: false
+        shouldRetry: false,
       };
     }
 
@@ -92,33 +84,34 @@ export class Reflector {
         userQuery,
         agentResponse,
         conversationHistory,
-        toolCalls
+        toolCalls,
       );
 
       // Generate reflection using LLM
       const reflectionMessages: Message[] = [
         {
           role: "system",
-          content: this.options.reflectionPrompt!
+          content: this.options.reflectionPrompt!,
         },
         {
           role: "user",
-          content: reflectionInput
-        }
+          content: reflectionInput,
+        },
       ];
 
       const reflectionOutput = await generateStructured(
         this.reflectionModel || this.config.provider,
-        reflectionMessages
+        reflectionMessages,
       );
 
       // Parse reflection result
       const result = this.parseReflectionOutput(reflectionOutput.response);
 
-      logger.debug(`[Reflector] Quality: ${result.quality}, Score: ${result.score}`);
+      logger.debug(
+        `[Reflector] Quality: ${result.quality}, Score: ${result.score}`,
+      );
 
       return result;
-
     } catch (error) {
       logger.error(`[Reflector] Reflection failed: ${error}`);
       // Fallback: assume response is acceptable
@@ -127,7 +120,7 @@ export class Reflector {
         score: 75,
         feedback: `Reflection failed: ${error instanceof Error ? error.message : String(error)}`,
         suggestions: ["Consider manual review"],
-        shouldRetry: false
+        shouldRetry: false,
       };
     }
   }
@@ -136,7 +129,7 @@ export class Reflector {
     userQuery: string,
     agentResponse: string,
     conversationHistory: Message[],
-    toolCalls?: any[]
+    toolCalls?: any[],
   ): string {
     let input = `## User Query
 ${userQuery}
@@ -145,13 +138,16 @@ ${userQuery}
 ${agentResponse}
 
 ## Conversation Context
-${conversationHistory.slice(-5).map(msg => `${msg.role}: ${msg.content}`).join('\n')}
+${conversationHistory
+  .slice(-5)
+  .map((msg) => `${msg.role}: ${msg.content}`)
+  .join("\n")}
 
 `;
 
     if (toolCalls && toolCalls.length > 0) {
       input += `## Tool Calls Used
-${toolCalls.map(call => `- ${call.name}(${JSON.stringify(call.args)})`).join('\n')}
+${toolCalls.map((call) => `- ${call.name}(${JSON.stringify(call.args)})`).join("\n")}
 
 `;
     }
@@ -178,11 +174,12 @@ Focus on whether this response adequately addresses the user's needs and maintai
         quality: this.validateQuality(parsed.quality),
         score: Math.max(0, Math.min(100, parsed.score || 0)),
         feedback: parsed.feedback || "No feedback provided",
-        suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
+        suggestions: Array.isArray(parsed.suggestions)
+          ? parsed.suggestions
+          : [],
         shouldRetry: parsed.shouldRetry || false,
-        improvedResponse: parsed.improvedResponse
+        improvedResponse: parsed.improvedResponse,
       };
-
     } catch (error) {
       logger.warn(`[Reflector] Failed to parse reflection output: ${error}`);
       // Return a neutral result
@@ -191,14 +188,18 @@ Focus on whether this response adequately addresses the user's needs and maintai
         score: 50,
         feedback: "Failed to parse reflection result",
         suggestions: ["Consider manual review of the response"],
-        shouldRetry: true
+        shouldRetry: true,
       };
     }
   }
 
-  private validateQuality(quality: string): "excellent" | "good" | "needs_improvement" | "poor" {
+  private validateQuality(
+    quality: string,
+  ): "excellent" | "good" | "needs_improvement" | "poor" {
     const validQualities = ["excellent", "good", "needs_improvement", "poor"];
-    return validQualities.includes(quality) ? quality as any : "needs_improvement";
+    return validQualities.includes(quality)
+      ? (quality as any)
+      : "needs_improvement";
   }
 
   // Batch reflection for multiple responses
@@ -208,10 +209,15 @@ Focus on whether this response adequately addresses the user's needs and maintai
       agentResponse: string;
       conversationHistory: Message[];
       toolCalls?: any[];
-    }>
+    }>,
   ): Promise<ReflectionResult[]> {
-    const promises = evaluations.map(evaluation =>
-      this.reflect(evaluation.userQuery, evaluation.agentResponse, evaluation.conversationHistory, evaluation.toolCalls)
+    const promises = evaluations.map((evaluation) =>
+      this.reflect(
+        evaluation.userQuery,
+        evaluation.agentResponse,
+        evaluation.conversationHistory,
+        evaluation.toolCalls,
+      ),
     );
 
     return await Promise.all(promises);
@@ -228,7 +234,7 @@ Focus on whether this response adequately addresses the user's needs and maintai
       enabled: this.options.enabled,
       threshold: this.options.threshold,
       maxRetries: this.options.maxRetries,
-      useSeparateModel: this.options.useSeparateModel
+      useSeparateModel: this.options.useSeparateModel,
     };
   }
 
@@ -243,28 +249,38 @@ Focus on whether this response adequately addresses the user's needs and maintai
     userQuery: string,
     originalResponse: string,
     reflection: ReflectionResult,
-    finalResponse: string
+    finalResponse: string,
   ): Promise<void> {
     // TODO: Implement learning mechanism
     // Could store reflection results for pattern analysis
     // Or fine-tune the model based on reflection feedback
 
-    logger.debug(`[Reflector] Learning from reflection (score: ${reflection.score})`);
+    logger.debug(
+      `[Reflector] Learning from reflection (score: ${reflection.score})`,
+    );
   }
 }
 
 // Quality-based decision making
-export function shouldRetryBasedOnQuality(result: ReflectionResult, threshold: number): boolean {
+export function shouldRetryBasedOnQuality(
+  result: ReflectionResult,
+  threshold: number,
+): boolean {
   return result.score < threshold || result.shouldRetry;
 }
 
 export function getQualityColor(quality: string): string {
   switch (quality) {
-    case "excellent": return "🟢";
-    case "good": return "🟡";
-    case "needs_improvement": return "🟠";
-    case "poor": return "🔴";
-    default: return "⚪";
+    case "excellent":
+      return "🟢";
+    case "good":
+      return "🟡";
+    case "needs_improvement":
+      return "🟠";
+    case "poor":
+      return "🔴";
+    default:
+      return "⚪";
   }
 }
 

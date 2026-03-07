@@ -190,7 +190,7 @@ sequenceDiagram
 
 ### 🧠 **Knowledge & Extensibility**
 
-- **Obsidian Integration**: Deep connection with your local knowledge base (Knowledge Graph, Daily Notes, Tag management)
+- **Obsidian Integration** ❤️ - **Advanced Knowledge Management**: TF-IDF semantic search, knowledge graph analysis, AI synthesis, real-time sync, 15+ sophisticated tools
 - **Plugin Ecosystem**: Lego-style modular architecture. Add new tools, agents, or middleware without touching core code.
 
 ### 📊 **Enterprise Features**
@@ -371,12 +371,23 @@ Krab includes 60+ powerful tools across 19 feature categories:
 - `web_search` - Hybrid search capabilities
 - `file_ops` - File system operations
 
-### **Knowledge Tools (Obsidian)**
+### **Knowledge Tools (Obsidian) — 15+ Advanced Tools**
 
-- `obsidian_search` - Global vault search
-- `obsidian_read` - Read notes with metadata
-- `obsidian_daily` - Daily notes management
-- `obsidian_stats` - Vault analytics and graph data
+- `obsidian_read_note` - Read specific notes with full metadata
+- `obsidian_search_notes` - Basic text search across vault
+- `obsidian_semantic_search` - TF-IDF cosine similarity search
+- `obsidian_find_related_notes` - Graph-based relationship discovery
+- `obsidian_get_knowledge_graph` - Complete vault relationship graph
+- `obsidian_get_central_nodes` - Most connected/important notes
+- `obsidian_find_knowledge_path` - Shortest paths between concepts
+- `obsidian_synthesize_knowledge` - AI-powered topic summarization
+- `obsidian_discover_clusters` - Tag-based theme clustering
+- `obsidian_list_notes_by_tag` - Tag-filtered note listing
+- `obsidian_create_note` - Create new notes with frontmatter
+- `obsidian_start_sync` - Enable real-time file watching
+- `obsidian_stop_sync` - Disable live vault updates
+- `obsidian_sync_status` - Monitor sync state
+- `obsidian_vault_stats` - Comprehensive vault analytics
 
 ### **Creative Tools**
 

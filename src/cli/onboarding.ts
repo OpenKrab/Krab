@@ -1,328 +1,360 @@
-// ============================================================
-// 🦀 Krab — Enhanced Onboarding Wizard (OpenClaw-inspired)
-// ============================================================
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { existsSync, writeFileSync, readFileSync, mkdirSync } from "fs";
 import { resolve, join } from "path";
 import { homedir } from "os";
 import { randomBytes } from "crypto";
+import { fileURLToPath } from "url";
 import { getModels } from "../utils/model-fetcher.js";
+import { getConfigPath, getEnvPath, saveConfig } from "../core/krab-config.js";
 
-const ENV_PATH = resolve(process.cwd(), ".env");
-const KRAB_DIR = join(homedir(), ".krab");
+const __dirname = resolve(fileURLToPath(new URL(".", import.meta.url)));
+const I18N_PATH = resolve(__dirname, "..", "tui", "i18n.json");
+
+function loadI18n() {
+  try {
+    return JSON.parse(readFileSync(I18N_PATH, "utf-8"));
+  } catch (error) {
+    return { onboarding: {} };
+  }
+}
+
+const i18n = loadI18n().onboarding;
 
 // Generate random token
 function generateToken(): string {
-  return 'krab_' + randomBytes(32).toString('hex');
+  return "krab_" + randomBytes(32).toString("hex");
 }
 
 export async function runOnboarding() {
   console.clear();
-  
+
   // Header
-  p.intro(pc.bgCyan(pc.black(" 🦀 Krab Onboarding ")));
-  
+  p.intro(pc.bgCyan(pc.black(i18n.intro)));
+
   // Step 1: Security Warning
-  p.log.message(pc.yellow("⚠️  Security Warning — Please Read\n"));
-  p.log.message([
-    "Krab is a powerful AI agent framework that can:",
-    "  • Execute shell commands",
-    "  • Read and write files",
-    "  • Search the web",
-    "  • Access your system\n",
-    "",
-    "If you enable tools, a malicious prompt could trick the AI",
-    "into performing unsafe actions.\n",
-    "",
-    pc.bold("Recommended security practices:"),
-    "  • Use sandbox mode for untrusted inputs",
-    "  • Enable tool approval for destructive actions",
-    "  • Never expose sensitive credentials to the agent",
-    "  • Use strong API keys and keep them secret",
-    "  • Regularly audit with: krab security audit\n",
-  ].join("\n"));
-  
+  p.log.message(pc.yellow(`${i18n.security_warning_title}\n`));
+  p.log.message(i18n.security_warning_body);
+
   const securityAck = await p.confirm({
-    message: "I understand this is powerful and inherently risky. Continue?",
+    message: i18n.security_confirm,
     initialValue: true,
   });
-  
+
   if (!securityAck || p.isCancel(securityAck)) {
-    p.cancel("Onboarding cancelled. Run 'krab onboard' when you're ready.");
+    p.cancel(i18n.cancel_msg);
     process.exit(0);
   }
-  
-  // Step 2: Select Setup Type
+
+  // Step 2: Config Detection
+  const configPath = getConfigPath();
+  if (existsSync(configPath)) {
+    p.log.message(pc.blue(`\n📢 ${i18n.config_handler_msg}`));
+    const configAction = await p.select({
+      message: "Action:",
+      options: [
+        { value: "keep", label: i18n.config_keep },
+        { value: "modify", label: i18n.config_modify },
+        { value: "reset", label: i18n.config_reset },
+      ],
+    });
+
+    if (p.isCancel(configAction)) {
+      p.cancel(i18n.cancel_msg);
+      process.exit(0);
+    }
+
+    if (configAction === "keep") {
+      p.outro(i18n.config_saved);
+      return;
+    }
+
+    if (configAction === "reset") {
+      // Logic for reset could be adding a flag to start fresh
+    }
+  }
+
+  // Step 3: Select Setup Type
   const setupType = await p.select({
-    message: "What do you want to set up?",
+    message: i18n.setup_type_msg,
     options: [
-      { 
-        value: "local", 
-        label: "🖥️  Local Agent (Recommended)",
-        hint: "Run Krab on this machine only"
+      {
+        value: "local",
+        label: i18n.setup_local_label,
+        hint: i18n.setup_local_hint,
       },
-      { 
-        value: "gateway", 
-        label: "🌐 Local Gateway",
-        hint: "Run gateway server on this machine"
+      {
+        value: "gateway",
+        label: i18n.setup_gateway_label,
+        hint: i18n.setup_gateway_hint,
       },
-      { 
-        value: "minimal", 
-        label: "⚡ Minimal Setup",
-        hint: "Just the basics, configure later"
+      {
+        value: "minimal",
+        label: i18n.setup_minimal_label,
+        hint: i18n.setup_minimal_hint,
       },
     ],
   });
-  
+
   if (p.isCancel(setupType)) {
-    p.cancel("Onboarding cancelled.");
+    p.cancel(i18n.cancel_msg);
     process.exit(0);
   }
-  
-  const config: Record<string, string> = {};
-  
-  // Step 3: Gateway Configuration (if selected)
-  if (setupType === "gateway") {
-    p.log.step("Gateway Configuration");
-    
+
+  const envValues: Record<string, string> = {};
+  const configValues: any = {};
+
+  // Step 4: Core Configuration
+  if (setupType !== "minimal") {
     const workspace = await p.text({
-      message: "Workspace directory:",
-      initialValue: join(KRAB_DIR, "workspace"),
-      placeholder: join(KRAB_DIR, "workspace"),
+      message: i18n.workspace_msg,
+      initialValue: join(homedir(), ".krab", "workspace"),
+      placeholder: join(homedir(), ".krab", "workspace"),
     });
-    
+
     if (p.isCancel(workspace)) {
-      p.cancel("Onboarding cancelled.");
+      p.cancel(i18n.cancel_msg);
       process.exit(0);
     }
-    
-    config["KRAB_WORKSPACE"] = workspace;
-    
-    // Create workspace directory
-    if (!existsSync(workspace)) {
-      mkdirSync(workspace, { recursive: true });
-    }
-    
+    configValues.agents = {
+      defaults: {
+        workspace: workspace,
+      },
+    };
+  }
+
+  // Step 5: Gateway Configuration
+  if (setupType === "gateway") {
+    p.log.step("Gateway Configuration");
+
     const port = await p.text({
-      message: "Gateway port:",
+      message: i18n.port_msg,
       initialValue: "18789",
       placeholder: "18789",
       validate: (value) => {
         const num = parseInt(value);
         if (isNaN(num) || num < 1024 || num > 65535) {
-          return "Please enter a valid port number (1024-65535)";
+          return i18n.port_invalid;
         }
       },
     });
-    
+
     if (p.isCancel(port)) {
-      p.cancel("Onboarding cancelled.");
+      p.cancel(i18n.cancel_msg);
       process.exit(0);
     }
-    
-    config["KRAB_PORT"] = port;
-    
+
     const bind = await p.select({
-      message: "Gateway bind address:",
+      message: i18n.bind_msg,
       options: [
-        { value: "127.0.0.1", label: "🛡️  Loopback (127.0.0.1)", hint: "Most secure - localhost only" },
-        { value: "0.0.0.0", label: "🌐 All interfaces (0.0.0.0)", hint: "Accessible from network" },
+        { value: "loopback", label: i18n.bind_loopback },
+        { value: "lan", label: i18n.bind_all },
       ],
-      initialValue: "127.0.0.1",
+      initialValue: "loopback",
     });
-    
+
     if (p.isCancel(bind)) {
-      p.cancel("Onboarding cancelled.");
+      p.cancel(i18n.cancel_msg);
       process.exit(0);
     }
-    
-    config["KRAB_HOST"] = bind;
-    
+
     const auth = await p.select({
-      message: "Gateway authentication:",
+      message: i18n.auth_msg,
       options: [
-        { value: "token", label: "🔐 Token (Recommended)", hint: "Secure token-based auth" },
-        { value: "none", label: "⚠️  No auth", hint: "Not recommended for production" },
+        { value: "token", label: i18n.auth_token },
+        { value: "none", label: i18n.auth_none },
       ],
       initialValue: "token",
     });
-    
+
     if (p.isCancel(auth)) {
-      p.cancel("Onboarding cancelled.");
+      p.cancel(i18n.cancel_msg);
       process.exit(0);
     }
-    
+
+    let token = "";
     if (auth === "token") {
-      const token = await p.text({
-        message: "Gateway token (blank to generate):",
-        placeholder: "Leave blank for auto-generation",
+      const tokenInput = await p.text({
+        message: i18n.token_msg,
+        placeholder: i18n.token_hint,
       });
-      
-      if (p.isCancel(token)) {
-        p.cancel("Onboarding cancelled.");
+
+      if (p.isCancel(tokenInput)) {
+        p.cancel(i18n.cancel_msg);
         process.exit(0);
       }
-      
-      config["KRAB_GATEWAY_TOKEN"] = token || generateToken();
-      
-      if (!token) {
-        p.log.success(`Generated token: ${config["KRAB_GATEWAY_TOKEN"].substring(0, 20)}...`);
+      token = tokenInput || generateToken();
+
+      if (!tokenInput) {
+        p.log.success(
+          i18n.token_generated.replace(
+            "{token}",
+            `${token.substring(0, 20)}...`,
+          ),
+        );
       }
     }
+
+    configValues.gateway = {
+      port: parseInt(port),
+      bind: bind,
+      auth: {
+        mode: auth,
+        token: token,
+      },
+    };
   }
-  
-  // Step 4: LLM Provider Setup
-  p.log.step("LLM Provider Setup");
-  
+
+  // Step 6: LLM Provider Setup
+  p.log.step(i18n.provider_msg);
+
   const provider = await p.select({
-    message: "Select your AI provider:",
+    message: i18n.provider_msg,
     options: [
-      { value: "openrouter", label: "🌐 OpenRouter", hint: "Free models available" },
-      { value: "google", label: "🌍 Google Gemini", hint: "Free tier available" },
+      {
+        value: "google",
+        label: "🌍 Google Gemini",
+        hint: "Free tier available",
+      },
       { value: "openai", label: "🤖 OpenAI", hint: "GPT-4, GPT-3.5" },
-      { value: "anthropic", label: "🧠 Anthropic Claude", hint: "Claude models" },
-      { value: "kilocode", label: "🚀 KiloCode", hint: "Free models available" },
-      { value: "opencode", label: "⚡ OpenCode Zen", hint: "Free models available" },
+      {
+        value: "anthropic",
+        label: "🧠 Anthropic Claude",
+        hint: "Claude models",
+      },
+      {
+        value: "openrouter",
+        label: "🌐 OpenRouter",
+        hint: "Free models available",
+      },
+      { value: "kilocode", label: "🚀 KiloCode", hint: "Experimental" },
       { value: "ollama", label: "💻 Ollama", hint: "Run models locally" },
     ],
   });
-  
+
   if (p.isCancel(provider)) {
-    p.cancel("Onboarding cancelled.");
+    p.cancel(i18n.cancel_msg);
     process.exit(0);
   }
-  
-  // Step 5: API Key (if needed)
+
   const envKeyMap: Record<string, string> = {
     openrouter: "OPENROUTER_API_KEY",
     google: "GEMINI_API_KEY",
     openai: "OPENAI_API_KEY",
     anthropic: "ANTHROPIC_API_KEY",
     kilocode: "KILOCODE_API_KEY",
-    opencode: "OPENCODE_API_KEY",
     ollama: "OLLAMA_BASE_URL",
   };
-  
+
   const envKey = envKeyMap[provider];
-  
+  let apiKey = "";
+
   if (provider === "ollama") {
     const ollamaUrl = await p.text({
       message: "Ollama Base URL:",
       initialValue: "http://localhost:11434",
       placeholder: "http://localhost:11434",
     });
-    
+
     if (p.isCancel(ollamaUrl)) {
-      p.cancel("Onboarding cancelled.");
+      p.cancel(i18n.cancel_msg);
       process.exit(0);
     }
-    
-    config[envKey] = ollamaUrl;
+
+    envValues[envKey] = ollamaUrl;
   } else {
-    const apiKey = await p.password({
-      message: `Enter your ${envKey} (leave blank to skip):`,
+    const keyInput = await p.password({
+      message: i18n.api_key_msg.replace("{key}", envKey),
       mask: "●",
     });
-    
-    if (p.isCancel(apiKey)) {
-      p.cancel("Onboarding cancelled.");
+
+    if (p.isCancel(keyInput)) {
+      p.cancel(i18n.cancel_msg);
       process.exit(0);
     }
-    
-    if (apiKey) {
-      config[envKey] = apiKey;
+
+    if (keyInput) {
+      envValues[envKey] = keyInput;
+      apiKey = keyInput;
     }
   }
-  
-  // Step 6: Select Model
-  if (config[envKey] || provider === "ollama") {
+
+  // Step 7: Select Model
+  if (apiKey || provider === "ollama") {
     const s = p.spinner();
-    s.start("Fetching available models...");
-    
+    s.start(i18n.fetching_models);
+
     try {
-      const models = await getModels(provider, config[envKey]);
-      s.stop(pc.green(`Found ${models.length} models`));
-      
+      const models = await getModels(
+        provider as any,
+        apiKey || envValues[envKey],
+      );
+      s.stop(i18n.models_found.replace("{count}", models.length.toString()));
+
       if (models.length > 0) {
         const model = await p.select({
-          message: "Select a model:",
-          options: models.map(m => ({
+          message: i18n.model_select_msg,
+          options: models.map((m) => ({
             value: m,
             label: m,
           })),
         });
-        
+
         if (!p.isCancel(model)) {
-          config["KRAB_DEFAULT_MODEL"] = model;
+          if (!configValues.agents) configValues.agents = { defaults: {} };
+          if (!configValues.agents.defaults.model)
+            configValues.agents.defaults.model = {};
+          configValues.agents.defaults.model.primary = model;
+          envValues["KRAB_DEFAULT_MODEL"] = model;
         }
       }
     } catch (error) {
-      s.stop(pc.yellow("Could not fetch models, using defaults"));
+      s.stop(i18n.models_not_found);
     }
   }
-  
-  // Step 7: Additional Settings
-  p.log.step("Additional Settings");
-  
-  const enableVoice = await p.confirm({
-    message: "Enable voice features (STT/TTS)?",
-    initialValue: true,
-  });
-  
-  if (!p.isCancel(enableVoice)) {
-    config["KRAB_ENABLE_VOICE"] = enableVoice ? "true" : "false";
-  }
-  
-  const enableMemory = await p.confirm({
-    message: "Enable long-term memory?",
-    initialValue: true,
-  });
-  
-  if (!p.isCancel(enableMemory)) {
-    config["KRAB_ENABLE_LONG_TERM_MEMORY"] = enableMemory ? "true" : "false";
-  }
-  
-  // Step 8: Save Configuration
+
+  // Step 8: Save & Finish
   const s = p.spinner();
-  s.start("Saving configuration...");
-  
-  // Read existing .env if exists
+  s.start(i18n.saving_config);
+
+  // Save .env
+  const envPath = getEnvPath();
   let envContent = "";
-  if (existsSync(ENV_PATH)) {
-    envContent = readFileSync(ENV_PATH, "utf-8") + "\n\n";
+  if (existsSync(envPath)) {
+    envContent = readFileSync(envPath, "utf-8") + "\n\n";
   }
-  
-  // Add new config
-  envContent += "# 🦀 Krab Configuration (Generated by onboarding)\n";
-  envContent += `# Date: ${new Date().toISOString()}\n\n`;
-  
-  for (const [key, value] of Object.entries(config)) {
-    if (value) {
-      envContent += `${key}=${value}\n`;
+  envContent += `# 🦀 Krab Config - ${new Date().toISOString()}\n`;
+  for (const [k, v] of Object.entries(envValues)) {
+    envContent += `${k}=${v}\n`;
+  }
+  writeFileSync(envPath, envContent);
+
+  // Save krab.json
+  saveConfig(configValues);
+
+  // Create workspace if needed
+  if (configValues.agents?.defaults?.workspace) {
+    const ws = resolve(configValues.agents.defaults.workspace);
+    if (!existsSync(ws)) {
+      mkdirSync(ws, { recursive: true });
     }
   }
-  
-  writeFileSync(ENV_PATH, envContent);
-  
-  // Create .krab directory structure
-  if (!existsSync(KRAB_DIR)) {
-    mkdirSync(KRAB_DIR, { recursive: true });
-  }
-  
-  s.stop(pc.green("Configuration saved!"));
-  
+
+  s.stop(i18n.config_saved);
+
   // Completion
-  p.outro([
-    pc.bgGreen(pc.black(" ✓ Onboarding Complete! ")),
-    "",
-    pc.bold("What's next?"),
-    "",
-    `  ${pc.cyan("krab chat")}     Start interactive chat`,
-    `  ${pc.cyan("krab tui")}      Launch modern TUI`,
-    `  ${pc.cyan("krab ask")}      Ask a single question`,
-    `  ${pc.cyan("krab --help")}   Show all commands`,
-    "",
-    pc.dim(`Configuration saved to: ${ENV_PATH}`),
-  ].join("\n"));
+  p.outro(
+    [
+      pc.bgGreen(pc.black(i18n.complete_title)),
+      "",
+      pc.bold(i18n.next_steps_title),
+      "",
+      `  ${pc.cyan("krab chat")}     ${i18n.next_chat}`,
+      `  ${pc.cyan("krab tui")}      ${i18n.next_tui}`,
+      `  ${pc.cyan("krab ask")}      ${i18n.next_ask}`,
+      `  ${pc.cyan("krab --help")}   ${i18n.next_help}`,
+      "",
+      pc.dim(i18n.saved_to.replace("{path}", configPath)),
+    ].join("\n"),
+  );
 }

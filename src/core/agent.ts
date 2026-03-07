@@ -1,7 +1,7 @@
 // ============================================================
 // 🦀 Krab — Agent Core (ReAct Loop with Error Recovery)
 // ============================================================
-import { generateStructured } from "../providers/llm.js";
+import { generateStructured, generateTextResponse } from "../providers/llm.js";
 import { executeToolCalls } from "../tools/executor.js";
 import { registry } from "../tools/registry.js";
 import { ConversationMemory } from "../memory/conversation-enhanced.js";
@@ -11,40 +11,26 @@ import {
   formatReflectionSummary,
 } from "./reflector.js";
 import { logger } from "../utils/logger.js";
-import type { KrabConfig, Message } from "./types.js";
+import type { KrabConfig, Message, Role } from "./types.js";
 import pc from "picocolors";
+import { readFileSync } from "fs";
+import { resolve } from "path";
+import { fileURLToPath } from "url";
 
-const SYSTEM_PROMPT = `You are Krab 🦀, a lightweight but powerful AGI assistant.
+const __dirname = resolve(fileURLToPath(new URL(".", import.meta.url)));
+const PROMPTS_PATH = resolve(__dirname, "prompts.json");
 
-## Your Capabilities
-You can think, plan, use tools, and reflect on your actions.
-
-## Available Tools
-{tools}
-
-## Response Rules
-1. **Always think step-by-step** before acting.
-2. If you need information, use the appropriate tool.
-3. If a tool fails, reflect on the error and try a different approach (up to {maxRetries} retries).
-4. When you have enough information, respond directly to the user.
-5. Keep responses concise but helpful.
-6. You can call multiple read-only tools at once for efficiency.
-7. For dangerous operations (shell, file write), explain what you're doing first.
-
-## CRITICAL: JSON Output Format
-You MUST respond in valid JSON format. Your output will be parsed by a machine.
-
-### Structure:
-{
-  "thinking": "Your internal reasoning",
-  "plan": ["Step 1", "Step 2"],
-  "tool_calls": [
-    { "name": "tool_name", "args": { "arg1": "value" } }
-  ],
-  "response": "Final message to user (if next_action is 'respond')",
-  "next_action": "respond" | "tool" | "replan"
+function loadPrompts() {
+  try {
+    return JSON.parse(readFileSync(PROMPTS_PATH, "utf-8"));
+  } catch (error) {
+    logger.error(`Failed to load prompts from ${PROMPTS_PATH}`);
+    return { agent: { system: "" }, summarizer: { system: "" } };
+  }
 }
-`;
+
+const prompts = loadPrompts();
+const SYSTEM_PROMPT = prompts.agent.system;
 
 export class Agent {
   private config: KrabConfig;
@@ -66,14 +52,18 @@ export class Agent {
       messages?: Message[];
     },
   ): Promise<string> {
-    if (options?.messages) {
-      await this.memory.setAll(options.messages);
-    }
-    this.memory.add({ role: "user", content: userInput });
+    const conversationId = options?.conversationId || "default";
+    this.memory.addMessage(conversationId, {
+      role: "user",
+      content: userInput,
+    });
     this.iterationCount = 0;
 
+    // Trigger proactive summarization if needed
+    await this.summarizeIfNeeded(conversationId);
+
     try {
-      const response = await this.reactLoop();
+      const response = await this.reactLoop(conversationId);
 
       // Reflection step
       if (this.config.reflector?.enabled) {
@@ -117,7 +107,7 @@ export class Agent {
 
         // Reset iteration count and retry
         this.iterationCount = 0;
-        const improvedResponse = await this.reactLoop();
+        const improvedResponse = await this.reactLoop(conversationId);
 
         // Reflect on the improved response too
         const secondReflection = await this.reflector.reflect(
@@ -144,8 +134,75 @@ export class Agent {
     }
   }
 
+  // ── Context Retrieval ───────────────────────────────────────
+  private getEnhancedSystemPrompt(conversationId: string): string {
+    const summary =
+      this.memory.getSummary(conversationId) || "No previous summary.";
+    const toolsText = registry
+      .getAll()
+      .map((t) => `- ${t.name}: ${t.description}`)
+      .join("\n");
+
+    return SYSTEM_PROMPT.replace("{tools}", toolsText)
+      .replace("{maxRetries}", (this.config.maxRetries || 3).toString())
+      .replace("{memorySummary}", summary);
+  }
+
+  private async summarizeIfNeeded(conversationId: string): Promise<void> {
+    const stats = this.memory.getConversationStats(conversationId);
+    if (!stats) return;
+
+    const limit = this.config.memoryLimit || 50;
+
+    if (stats.messageCount >= limit) {
+      logger.info(
+        `[Agent] Memory limit reached for ${conversationId} (${stats.messageCount}/${limit}). Triggering proactive summarization...`,
+      );
+
+      const conv = this.memory.getConversation(conversationId);
+      if (!conv) return;
+
+      const historyText = conv.messages
+        .map((m) => `${m.role}: ${m.content}`)
+        .join("\n");
+
+      const prompt: Message[] = [
+        {
+          role: "system",
+          content: prompts.summarizer.system,
+        },
+        { role: "user", content: `History to summarize:\n${historyText}` },
+      ];
+
+      try {
+        const providerConfig = this.config.provider || {
+          name: "google",
+          model: "gemini-2.0-flash",
+          apiKey: process.env.GEMINI_API_KEY,
+        };
+
+        const summary = await generateTextResponse(providerConfig, prompt);
+
+        this.memory.setSummary(conversationId, summary);
+
+        // Prune history: keep system prompt if any, and last 10 messages
+        const messages = conv.messages;
+        const systemMessages = messages.filter((m) => m.role === "system");
+        const recent = messages.slice(-10);
+
+        this.memory.setMessages(conversationId, [...systemMessages, ...recent]);
+
+        logger.info(
+          `[Agent] Memory summarized and pruned for ${conversationId}.`,
+        );
+      } catch (err: any) {
+        logger.warn(`[Agent] Summarization failed: ${err.message}`);
+      }
+    }
+  }
+
   // ── ReAct Loop (Think → Act → Observe → Reflect) ──────────
-  private async reactLoop(): Promise<string> {
+  private async reactLoop(conversationId: string): Promise<string> {
     let retryCount = 0;
     const maxIterations = this.config.maxIterations || 5;
     const maxRetries = this.config.maxRetries || 3;
@@ -154,7 +211,6 @@ export class Agent {
       this.iterationCount++;
       logger.debug(`[Agent] Iteration ${this.iterationCount}/${maxIterations}`);
 
-      // Get provider config with fallback
       const providerConfig = this.config.provider || {
         name: "google",
         model: "gemini-2.0-flash",
@@ -163,8 +219,17 @@ export class Agent {
 
       // 1. THINK — Generate structured output
       let output;
+      const systemPrompt = this.getEnhancedSystemPrompt(conversationId);
+      const messages = this.memory.getRecentMessages(conversationId, 20);
+
+      // Ensure system prompt is at the top
+      const llmMessages = [
+        { role: "system" as Role, content: systemPrompt },
+        ...messages.filter((m) => m.role !== "system"),
+      ];
+
       try {
-        output = await generateStructured(providerConfig, this.memory.getAll());
+        output = await generateStructured(providerConfig, llmMessages);
       } catch (err: any) {
         // Error recovery: retry with reflection
         retryCount++;
@@ -224,7 +289,32 @@ export class Agent {
           }
         }
 
-        // Check if any tool failed — trigger reflection
+        // 4.5 PROACTIVE REFLECTION — Sanity check after tools
+        if (this.config.reflector?.enabled) {
+          const intermediateOutput = results
+            .map((r) => `${r.name}: ${r.result.success ? "success" : "failed"}`)
+            .join(", ");
+          const reflection = await this.reflector.reflect(
+            "Intermediate Tool Check",
+            `Tools executed: ${intermediateOutput}`,
+            this.memory.getAll(),
+            results.map((r) => ({ name: r.name, args: {}, result: r.result })),
+          );
+
+          if (reflection.shouldRetry || reflection.score < 60) {
+            logger.warn(
+              `[Agent] Intermediate reflection caught an issue: ${reflection.feedback}`,
+            );
+            this.memory.add({
+              role: "assistant",
+              content: `[Proactive Reflection] I noticed an issue: ${reflection.feedback}. Suggestions: ${reflection.suggestions.join(". ")}. Adjusting plan...`,
+            });
+            retryCount++;
+            continue;
+          }
+        }
+
+        // Check if any tool failed (standard logic)
         const hasFailure = results.some((r) => !r.result.success);
         if (hasFailure) {
           retryCount++;
@@ -234,7 +324,6 @@ export class Agent {
               content:
                 "[Recovery exhausted] Could not complete the task after multiple retries.",
             });
-            // Let the model generate a final response
           } else {
             this.memory.add({
               role: "assistant",
@@ -354,19 +443,16 @@ export class Agent {
       contextMessages = contextMessages.slice(0, maxContextItems);
     }
 
-    // Get recent conversation history
-    const recentMessages = this.memory.getRecent(10);
-
     // Combine context + recent messages
+    const recentMessages = this.memory.getRecentMessages(
+      conversationId || "default",
+      10,
+    );
     const allMessages = [...contextMessages, ...recentMessages];
 
     // Update system prompt with memory context info
-    const enhancedSystemPrompt = SYSTEM_PROMPT.replace(
-      "{tools}",
-      registry
-        .getAll()
-        .map((t) => `- ${t.name}: ${t.description}`)
-        .join("\n"),
+    const enhancedSystemPrompt = this.getEnhancedSystemPrompt(
+      conversationId || "default",
     );
 
     // Replace system message with enhanced version

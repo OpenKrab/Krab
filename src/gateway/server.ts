@@ -326,16 +326,12 @@ export class GatewayServer {
 
     // Route
     try {
-      // Root — Serve Web Control UI
+      // Root — Gateway Status
       if (path === "/" || path === "/index.html") {
-        const indexPath = join(__dirname, "static", "index.html");
-        if (existsSync(indexPath)) {
-          res.writeHead(200, { "Content-Type": "text/html" });
-          res.end(readFileSync(indexPath));
-          return;
-        }
         res.writeHead(200, { "Content-Type": "text/plain" });
-        res.end("Krab Gateway is running. Web UI not found.");
+        res.end(
+          "🦀 Krab Gateway — TUI/CLI mode active. Web Dashboard disabled.",
+        );
         return;
       }
 

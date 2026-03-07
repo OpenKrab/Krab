@@ -9,37 +9,63 @@ import { logger } from "../utils/logger.js";
 // Dynamic imports for optional dependencies
 let nodeCron: any = null;
 
-interface CronJob {
+export interface TaskResult {
+  success: boolean;
+  executionTime: number;
+  output?: string;
+  error?: string;
+  timestamp: Date;
+}
+
+export interface ScheduledTask {
   id: string;
   name: string;
-  schedule: string; // Cron expression: "*/5 * * * *" (every 5 minutes)
+  cronExpression: string; // Cron expression: "*/5 * * * *"
   command: string;
   args?: string[];
   enabled: boolean;
   lastRun?: Date;
   nextRun?: Date;
   createdAt: Date;
+  updatedAt: Date;
   description?: string;
+  tags: string[];
+  priority: "low" | "medium" | "high" | "critical";
+  timeout: number;
+  retries: number;
+  maxRetries: number;
+  lastResult?: TaskResult;
+  schedule: string; // Alias for cronExpression
 }
 
-interface SchedulerOptions {
+export interface SchedulerConfig {
   storagePath?: string;
   maxConcurrentJobs?: number;
   enablePersistence?: boolean;
 }
 
-export class CronScheduler {
-  private jobs: Map<string, CronJob> = new Map();
-  private runningJobs: Set<string> = new Set();
-  private options: Required<SchedulerOptions>;
-  private cronInstances: Map<string, any> = new Map();
+export type TaskExecutionContext = {
+  taskId: string;
+  startTime: number;
+};
 
-  constructor(options: SchedulerOptions = {}) {
+export class CronScheduler {
+  private tasks: Map<string, ScheduledTask> = new Map();
+  private runningTasks: Set<string> = new Set();
+  private options: Required<SchedulerConfig>;
+  private cronInstances: Map<string, any> = new Map();
+  private stats = {
+    completedRuns: 0,
+    failedRuns: 0,
+    totalExecutionTime: 0,
+  };
+
+  constructor(options: SchedulerConfig = {}) {
     this.options = {
       storagePath: path.join(process.cwd(), "data", "scheduler.json"),
       maxConcurrentJobs: 5,
       enablePersistence: true,
-      ...options
+      ...options,
     };
 
     // Ensure data directory exists
@@ -49,239 +75,298 @@ export class CronScheduler {
     }
   }
 
-  async initialize(): Promise<void> {
+  async start(): Promise<void> {
     try {
       // Dynamic import of node-cron
       const cronModule = await import("node-cron").catch(() => null);
       if (!cronModule) {
-        throw new Error("node-cron not installed. Install with: npm install node-cron");
+        throw new Error(
+          "node-cron not installed. Install with: npm install node-cron",
+        );
       }
       nodeCron = cronModule;
 
-      // Load persisted jobs
+      // Load persisted tasks
       if (this.options.enablePersistence) {
-        await this.loadJobs();
+        await this.loadTasks();
       }
 
-      // Start all enabled jobs
-      for (const job of this.jobs.values()) {
-        if (job.enabled) {
-          await this.startJob(job.id);
+      // Start all enabled tasks
+      for (const task of this.tasks.values()) {
+        if (task.enabled) {
+          await this.startTask(task.id);
         }
       }
 
-      logger.info(`[Scheduler] Initialized with ${this.jobs.size} jobs`);
-
+      logger.info(`[Scheduler] Started with ${this.tasks.size} tasks`);
     } catch (error) {
-      logger.error("[Scheduler] Failed to initialize:", error);
+      logger.error("[Scheduler] Failed to start:", error);
       throw error;
     }
   }
 
-  async shutdown(): Promise<void> {
-    // Stop all running jobs
-    for (const jobId of this.cronInstances.keys()) {
-      await this.stopJob(jobId);
-    }
-
-    // Save jobs
-    if (this.options.enablePersistence) {
-      await this.saveJobs();
-    }
-
-    logger.info("[Scheduler] Shutdown complete");
+  // Alias for compatibility
+  async initialize(): Promise<void> {
+    return this.start();
   }
 
-  async addJob(jobData: Omit<CronJob, 'id' | 'createdAt' | 'lastRun' | 'nextRun'>): Promise<string> {
-    const job: CronJob = {
-      id: this.generateJobId(),
+  async stop(): Promise<void> {
+    // Stop all running task instances
+    for (const taskId of this.cronInstances.keys()) {
+      await this.stopTask(taskId);
+    }
+
+    // Save tasks
+    if (this.options.enablePersistence) {
+      await this.saveTasks();
+    }
+
+    logger.info("[Scheduler] Scheduler stopped");
+  }
+
+  addTask(
+    taskData: Omit<
+      ScheduledTask,
+      "id" | "createdAt" | "updatedAt" | "lastRun" | "nextRun" | "lastResult"
+    >,
+  ): string {
+    const task: ScheduledTask = {
+      id: this.generateTaskId(),
       createdAt: new Date(),
-      ...jobData
+      updatedAt: new Date(),
+      ...taskData,
+      schedule: taskData.cronExpression, // Sync alias
     };
 
-    this.jobs.set(job.id, job);
+    this.tasks.set(task.id, task);
 
-    if (job.enabled) {
-      await this.startJob(job.id);
+    if (task.enabled && nodeCron) {
+      void this.startTask(task.id);
     }
 
     if (this.options.enablePersistence) {
-      await this.saveJobs();
+      void this.saveTasks();
     }
 
-    logger.info(`[Scheduler] Added job: ${job.name} (${job.id})`);
-    return job.id;
+    logger.info(`[Scheduler] Added task: ${task.name} (${task.id})`);
+    return task.id;
   }
 
-  async removeJob(jobId: string): Promise<boolean> {
-    const job = this.jobs.get(jobId);
-    if (!job) {
+  addJob(data: any): string {
+    return this.addTask(data);
+  }
+
+  removeTask(taskId: string): boolean {
+    const task = this.tasks.get(taskId);
+    if (!task) {
       return false;
     }
 
-    await this.stopJob(jobId);
-    this.jobs.delete(jobId);
+    void this.stopTask(taskId);
+    this.tasks.delete(taskId);
 
     if (this.options.enablePersistence) {
-      await this.saveJobs();
+      void this.saveTasks();
     }
 
-    logger.info(`[Scheduler] Removed job: ${job.name} (${jobId})`);
+    logger.info(`[Scheduler] Removed task: ${task.name} (${taskId})`);
     return true;
   }
 
-  async enableJob(jobId: string): Promise<boolean> {
-    const job = this.jobs.get(jobId);
-    if (!job) {
+  enableTask(taskId: string): boolean {
+    const task = this.tasks.get(taskId);
+    if (!task) {
       return false;
     }
 
-    job.enabled = true;
-    await this.startJob(jobId);
+    task.enabled = true;
+    task.updatedAt = new Date();
+    void this.startTask(taskId);
 
     if (this.options.enablePersistence) {
-      await this.saveJobs();
+      void this.saveTasks();
     }
 
-    logger.info(`[Scheduler] Enabled job: ${job.name} (${jobId})`);
+    logger.info(`[Scheduler] Enabled task: ${task.name} (${taskId})`);
     return true;
   }
 
-  async disableJob(jobId: string): Promise<boolean> {
-    const job = this.jobs.get(jobId);
-    if (!job) {
+  disableTask(taskId: string): boolean {
+    const task = this.tasks.get(taskId);
+    if (!task) {
       return false;
     }
 
-    job.enabled = false;
-    await this.stopJob(jobId);
+    task.enabled = false;
+    task.updatedAt = new Date();
+    void this.stopTask(taskId);
 
     if (this.options.enablePersistence) {
-      await this.saveJobs();
+      void this.saveTasks();
     }
 
-    logger.info(`[Scheduler] Disabled job: ${job.name} (${jobId})`);
+    logger.info(`[Scheduler] Disabled task: ${task.name} (${taskId})`);
     return true;
   }
 
-  getJob(jobId: string): CronJob | undefined {
-    return this.jobs.get(jobId);
+  getTask(taskId: string): ScheduledTask | undefined {
+    return this.tasks.get(taskId);
   }
 
-  getAllJobs(): CronJob[] {
-    return Array.from(this.jobs.values());
+  getAllTasks(): ScheduledTask[] {
+    return Array.from(this.tasks.values());
   }
 
-  getEnabledJobs(): CronJob[] {
-    return this.getAllJobs().filter(job => job.enabled);
+  getEnabledTasks(): ScheduledTask[] {
+    return this.getAllTasks().filter((t) => t.enabled);
   }
 
-  getRunningJobs(): string[] {
-    return Array.from(this.runningJobs);
+  getRunningTasks(): string[] {
+    return Array.from(this.runningTasks);
   }
 
-  async runJobNow(jobId: string): Promise<boolean> {
-    const job = this.jobs.get(jobId);
-    if (!job) {
-      return false;
-    }
-
-    if (this.runningJobs.size >= this.options.maxConcurrentJobs) {
-      logger.warn(`[Scheduler] Max concurrent jobs reached (${this.options.maxConcurrentJobs})`);
-      return false;
-    }
-
-    await this.executeJob(job);
-    return true;
+  getStats() {
+    return {
+      totalTasks: this.tasks.size,
+      enabledTasks: this.getAllTasks().filter((t) => t.enabled).length,
+      runningTasks: this.runningTasks.size,
+      completedRuns: this.stats.completedRuns,
+      failedRuns: this.stats.failedRuns,
+      averageExecutionTime:
+        this.stats.completedRuns > 0
+          ? this.stats.totalExecutionTime / this.stats.completedRuns
+          : 0,
+    };
   }
 
-  private async startJob(jobId: string): Promise<void> {
-    const job = this.jobs.get(jobId);
-    if (!job || !job.enabled || !nodeCron) {
+  private async startTask(taskId: string): Promise<void> {
+    const task = this.tasks.get(taskId);
+    if (!task || !task.enabled || !nodeCron) {
       return;
     }
 
     // Stop existing instance if running
-    await this.stopJob(jobId);
+    await this.stopTask(taskId);
 
     try {
-      const cronInstance = nodeCron.schedule(job.schedule, async () => {
-        await this.executeJob(job);
+      const cronInstance = nodeCron.schedule(task.cronExpression, async () => {
+        await this.executeTask(task);
       });
 
-      this.cronInstances.set(jobId, cronInstance);
-      logger.info(`[Scheduler] Started job: ${job.name} (${job.schedule})`);
+      this.cronInstances.set(taskId, cronInstance);
+      task.nextRun = this.calculateNextRun(task.cronExpression);
 
+      logger.info(
+        `[Scheduler] Scheduled task: ${task.name} (${task.cronExpression})`,
+      );
     } catch (error) {
-      logger.error(`[Scheduler] Failed to start job ${job.name}:`, error);
+      logger.error(`[Scheduler] Failed to schedule task ${task.name}:`, error);
     }
   }
 
-  private async stopJob(jobId: string): Promise<void> {
-    const cronInstance = this.cronInstances.get(jobId);
+  private async stopTask(taskId: string): Promise<void> {
+    const cronInstance = this.cronInstances.get(taskId);
     if (cronInstance) {
       cronInstance.stop();
-      this.cronInstances.delete(jobId);
-      logger.info(`[Scheduler] Stopped job: ${jobId}`);
+      this.cronInstances.delete(taskId);
     }
   }
 
-  private async executeJob(job: CronJob): Promise<void> {
-    if (this.runningJobs.has(job.id)) {
-      logger.warn(`[Scheduler] Job ${job.name} is already running, skipping`);
+  private async executeTask(task: ScheduledTask): Promise<TaskResult | void> {
+    if (this.runningTasks.has(task.id)) {
+      logger.warn(`[Scheduler] Task ${task.name} is already running, skipping`);
       return;
     }
 
-    if (this.runningJobs.size >= this.options.maxConcurrentJobs) {
-      logger.warn(`[Scheduler] Max concurrent jobs reached, skipping ${job.name}`);
+    if (this.runningTasks.size >= this.options.maxConcurrentJobs) {
+      logger.warn(
+        `[Scheduler] Max concurrent tasks reached, skipping ${task.name}`,
+      );
       return;
     }
 
-    this.runningJobs.add(job.id);
-    job.lastRun = new Date();
+    this.runningTasks.add(task.id);
+    const startTime = Date.now();
+    task.lastRun = new Date();
 
-    logger.info(`[Scheduler] Executing job: ${job.name}`);
+    logger.info(`[Scheduler] Executing task: ${task.name}`);
 
     try {
-      // Execute the job command
-      const result = await this.executeCommand(job.command, job.args || []);
+      // Execute the task command
+      const output = await this.executeCommand(
+        task.command,
+        task.args || [],
+        task.timeout,
+      );
+
+      const executionTime = Date.now() - startTime;
+      const result: TaskResult = {
+        success: true,
+        executionTime,
+        output,
+        timestamp: new Date(),
+      };
+
+      task.lastResult = result;
+      this.stats.completedRuns++;
+      this.stats.totalExecutionTime += executionTime;
 
       // Update next run time
-      job.nextRun = this.calculateNextRun(job.schedule);
+      task.nextRun = this.calculateNextRun(task.cronExpression);
 
-      logger.info(`[Scheduler] Job completed: ${job.name}`);
+      logger.info(
+        `[Scheduler] Task completed: ${task.name} (${executionTime}ms)`,
+      );
 
-    } catch (error) {
-      logger.error(`[Scheduler] Job failed: ${job.name}`, error);
+      return result;
+    } catch (error: any) {
+      const executionTime = Date.now() - startTime;
+      const result: TaskResult = {
+        success: false,
+        executionTime,
+        error: error.message,
+        timestamp: new Date(),
+      };
+
+      task.lastResult = result;
+      this.stats.failedRuns++;
+      logger.error(`[Scheduler] Task failed: ${task.name}`, error);
+
+      return result;
     } finally {
-      this.runningJobs.delete(job.id);
+      this.runningTasks.delete(task.id);
 
-      // Save updated job data
+      // Save updated task data
       if (this.options.enablePersistence) {
-        await this.saveJobs();
+        void this.saveTasks();
       }
     }
   }
 
-  private async executeCommand(command: string, args: string[] = []): Promise<string> {
+  private async executeCommand(
+    command: string,
+    args: string[] = [],
+    timeout: number = 300,
+  ): Promise<string> {
     return new Promise((resolve, reject) => {
       const child = spawn(command, args, {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        shell: true
+        stdio: ["ignore", "pipe", "pipe"],
+        shell: true,
+        timeout: timeout * 1000,
       });
 
-      let stdout = '';
-      let stderr = '';
+      let stdout = "";
+      let stderr = "";
 
-      child.stdout?.on('data', (data) => {
+      child.stdout?.on("data", (data) => {
         stdout += data.toString();
       });
 
-      child.stderr?.on('data', (data) => {
+      child.stderr?.on("data", (data) => {
         stderr += data.toString();
       });
 
-      child.on('close', (code) => {
+      child.on("close", (code) => {
         if (code === 0) {
           resolve(stdout);
         } else {
@@ -289,86 +374,100 @@ export class CronScheduler {
         }
       });
 
-      child.on('error', (error) => {
+      child.on("error", (error) => {
         reject(error);
       });
     });
   }
 
   private calculateNextRun(cronExpression: string): Date {
-    // Simple calculation for next run (in a real implementation,
-    // you'd use a proper cron parser like 'cron-parser')
     const now = new Date();
     try {
-      // This is a simplified calculation - for production use a proper cron library
-      const parts = cronExpression.split(' ');
-
-      if (parts.length >= 5) {
-        // Handle simple cases like "*/5 * * * *" (every 5 minutes)
-        const minutePart = parts[0];
-        if (minutePart.startsWith('*/')) {
-          const interval = parseInt(minutePart.slice(2));
-          const nextMinute = Math.ceil(now.getMinutes() / interval) * interval;
-          const nextRun = new Date(now);
-          nextRun.setMinutes(nextMinute, 0, 0);
-
-          if (nextRun <= now) {
-            nextRun.setHours(nextRun.getHours() + 1);
-          }
-
-          return nextRun;
-        }
-      }
+      // Simple fallback - assume next hour for logic simplicity here
+      // Real apps should use cron-parser
+      const nextRun = new Date(now);
+      nextRun.setHours(nextRun.getHours() + 1, 0, 0, 0);
+      return nextRun;
     } catch (error) {
-      logger.warn("[Scheduler] Could not calculate next run time:", error);
+      return new Date(now.getTime() + 3600000);
     }
-
-    // Fallback: assume next hour
-    const nextRun = new Date(now);
-    nextRun.setHours(nextRun.getHours() + 1, 0, 0, 0);
-    return nextRun;
   }
 
-  private generateJobId(): string {
-    return `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  private generateTaskId(): string {
+    return `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
-  private async loadJobs(): Promise<void> {
+  private async loadTasks(): Promise<void> {
     try {
       if (fs.existsSync(this.options.storagePath)) {
-        const data = fs.readFileSync(this.options.storagePath, 'utf8');
-        const jobsData = JSON.parse(data);
+        const data = fs.readFileSync(this.options.storagePath, "utf8");
+        const tasksData = JSON.parse(data);
 
-        for (const jobData of jobsData) {
-          const job: CronJob = {
-            ...jobData,
-            lastRun: jobData.lastRun ? new Date(jobData.lastRun) : undefined,
-            nextRun: jobData.nextRun ? new Date(jobData.nextRun) : undefined,
-            createdAt: new Date(jobData.createdAt)
+        for (const taskData of tasksData) {
+          const task: ScheduledTask = {
+            ...taskData,
+            schedule: taskData.schedule || taskData.cronExpression, // Sync
+            lastRun: taskData.lastRun ? new Date(taskData.lastRun) : undefined,
+            nextRun: taskData.nextRun ? new Date(taskData.nextRun) : undefined,
+            createdAt: new Date(taskData.createdAt),
+            updatedAt: new Date(taskData.updatedAt || taskData.createdAt),
+            lastResult: taskData.lastResult
+              ? {
+                  ...taskData.lastResult,
+                  timestamp: new Date(taskData.lastResult.timestamp),
+                }
+              : undefined,
           };
-          this.jobs.set(job.id, job);
+          this.tasks.set(task.id, task);
         }
-
-        logger.info(`[Scheduler] Loaded ${this.jobs.size} jobs from storage`);
       }
     } catch (error) {
-      logger.error("[Scheduler] Failed to load jobs:", error);
+      logger.error("[Scheduler] Failed to load tasks:", error);
     }
   }
 
-  private async saveJobs(): Promise<void> {
+  private async saveTasks(): Promise<void> {
     try {
-      const jobsData = Array.from(this.jobs.values()).map(job => ({
-        ...job,
-        lastRun: job.lastRun?.toISOString(),
-        nextRun: job.nextRun?.toISOString(),
-        createdAt: job.createdAt.toISOString()
-      }));
-
-      fs.writeFileSync(this.options.storagePath, JSON.stringify(jobsData, null, 2));
+      const tasksData = Array.from(this.tasks.values());
+      fs.writeFileSync(
+        this.options.storagePath,
+        JSON.stringify(tasksData, null, 2),
+      );
     } catch (error) {
-      logger.error("[Scheduler] Failed to save jobs:", error);
+      logger.error("[Scheduler] Failed to save tasks:", error);
     }
+  }
+
+  async runTaskNow(taskId: string): Promise<TaskResult | void> {
+    const task = this.getTask(taskId);
+    if (!task) return;
+    return this.executeTask(task);
+  }
+
+  // --- Legacy Job Aliases ---
+  getJob(jobId: string) {
+    return this.getTask(jobId);
+  }
+  getAllJobs() {
+    return this.getAllTasks();
+  }
+  getEnabledJobs() {
+    return this.getEnabledTasks();
+  }
+  getRunningJobs() {
+    return this.getRunningTasks();
+  }
+  removeJob(jobId: string) {
+    return this.removeTask(jobId);
+  }
+  async enableJob(jobId: string) {
+    return this.enableTask(jobId);
+  }
+  async disableJob(jobId: string) {
+    return this.disableTask(jobId);
+  }
+  async runJobNow(jobId: string) {
+    return this.runTaskNow(jobId);
   }
 }
 
@@ -377,45 +476,27 @@ export const jobTemplates = {
   // News monitoring
   newsMonitor: {
     name: "News Monitor",
-    schedule: "0 */6 * * *", // Every 6 hours
+    cronExpression: "0 */6 * * *", // Every 6 hours
     command: "node",
     args: ["-e", "console.log('Checking news...')"],
-    description: "Monitor news sources for updates"
+    description: "Monitor news sources for updates",
+    tags: ["news"],
+    priority: "low" as const,
   },
 
   // System health check
   healthCheck: {
     name: "Health Check",
-    schedule: "*/30 * * * *", // Every 30 minutes
+    cronExpression: "*/30 * * * *", // Every 30 minutes
     command: "curl",
     args: ["-f", "http://localhost:3000/health"],
-    description: "Check system health and services"
+    description: "Check system health and services",
+    tags: ["health"],
+    priority: "high" as const,
   },
-
-  // Database cleanup
-  dbCleanup: {
-    name: "Database Cleanup",
-    schedule: "0 2 * * *", // Daily at 2 AM
-    command: "node",
-    args: ["scripts/cleanup.js"],
-    description: "Clean up old database records"
-  },
-
-  // Backup job
-  backup: {
-    name: "Backup",
-    schedule: "0 3 * * *", // Daily at 3 AM
-    command: "bash",
-    args: ["scripts/backup.sh"],
-    description: "Create system backup"
-  }
 };
 
 // Factory function for creating schedulers
-export function createScheduler(options: SchedulerOptions): CronScheduler {
+export function createScheduler(options: SchedulerConfig): CronScheduler {
   return new CronScheduler(options);
 }
-
-// Export for dynamic loading
-export default CronScheduler;
-export { ScheduledTask, SchedulerConfig, TaskExecutionContext };

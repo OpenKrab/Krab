@@ -5,6 +5,7 @@ import { ReflectionOptions } from "./reflector.js";
 import { resolve } from "path";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { config as dotenvConfig } from "dotenv";
+import { fileURLToPath } from "url";
 
 export interface KrabConfig {
   agents: {
@@ -111,6 +112,25 @@ export interface KrabConfig {
       exec: string;
     };
   };
+  obsidian?: {
+    vaultPath?: string;
+    enabled?: boolean;
+    autoIndex?: boolean;
+    indexInterval?: number;
+    semanticSearch?: boolean;
+    dailyNoteTemplate?: string;
+    dailyNoteFolder?: string;
+    templates?: {
+      project?: string;
+      meeting?: string;
+      idea?: string;
+    };
+    integrations?: {
+      backlinks?: boolean;
+      graph?: boolean;
+      tags?: boolean;
+    };
+  };
 }
 
 export interface AgentOverride {
@@ -142,114 +162,33 @@ export interface SecretProvider {
   command?: string;
   passEnv?: string[];
   allowSymlinkCommand?: boolean;
-  trustedDirs?: string[];
   timeoutMs?: number;
 }
 
-const DEFAULT_CONFIG: KrabConfig = {
-  agents: {
-    defaults: {
-      workspace: "~/.krab/workspace",
-      bootstrapMaxChars: 20000,
-      bootstrapTotalMaxChars: 150000,
-      imageMaxDimensionPx: 1200,
-      userTimezone: "Asia/Bangkok",
-      timeFormat: "auto",
-      model: {
-        primary: "google/gemini-2.0-flash",
-        fallbacks: ["openrouter/free"],
-      },
-      imageModel: {
-        primary: "openrouter/qwen/qwen-2.5-vl-72b-instruct:free",
-        fallbacks: ["openrouter/google/gemini-2.0-flash-vision:free"],
-      },
-      pdfModel: {
-        primary: "google/gemini-2.0-flash",
-        fallbacks: ["openrouter/free"],
-      },
-      pdfMaxBytesMb: 10,
-      pdfMaxPages: 20,
-      timeoutSeconds: 600,
-      contextTokens: 200000,
-      maxConcurrent: 1,
-    },
-  },
-  reflector: {
-    enabled: true,
-    threshold: 75,
-    maxRetries: 2,
-    useSeparateModel: false,
-  },
-  gateway: {
-    mode: "local",
-    port: 18789,
-    bind: "loopback",
-    auth: {
-      mode: "none", // For local development
-      allowTailscale: true,
-      rateLimit: {
-        maxAttempts: 10,
-        windowMs: 60000,
-        lockoutMs: 300000,
-        exemptLoopback: true,
-      },
-    },
-    controlUi: {
-      enabled: true,
-      basePath: "/krab",
-    },
-    http: {
-      endpoints: {
-        chatCompletions: {
-          enabled: true,
-        },
-        responses: {
-          enabled: true,
+const __dirname = resolve(fileURLToPath(new URL(".", import.meta.url)));
+const DEFAULT_CONFIG_PATH = resolve(__dirname, "default-config.json");
+
+function loadDefaultConfig(): KrabConfig {
+  try {
+    const data = readFileSync(DEFAULT_CONFIG_PATH, "utf-8");
+    return JSON.parse(data) as KrabConfig;
+  } catch (error) {
+    console.warn(
+      `Failed to load default-config from ${DEFAULT_CONFIG_PATH}, using minimal fallback`,
+    );
+    return {
+      agents: {
+        defaults: {
+          workspace: "~/.krab/workspace",
+          model: { primary: "google/gemini-2.0-flash" },
         },
       },
-    },
-  },
-  tools: {
-    profile: "messaging",
-    allow: ["*"],
-    deny: ["browser"],
-    elevated: {
-      enabled: false,
-      allowFrom: {
-        cli: ["*"],
-      },
-    },
-    exec: {
-      backgroundMs: 10000,
-      timeoutSec: 1800,
-      cleanupMs: 1800000,
-      notifyOnExit: true,
-      notifyOnExitEmptySuccess: false,
-      applyPatch: {
-        enabled: false,
-        allowModels: ["*"],
-      },
-    },
-  },
-  secrets: {
-    providers: {
-      default: {
-        source: "env",
-      },
-      filemain: {
-        source: "file",
-        path: "~/.krab/secrets.json",
-        mode: "json",
-        timeoutMs: 5000,
-      },
-    },
-    defaults: {
-      env: "default",
-      file: "filemain",
-      exec: "vault",
-    },
-  },
-};
+      tools: { profile: "minimal" },
+    } as any;
+  }
+}
+
+const DEFAULT_CONFIG = loadDefaultConfig();
 
 const CONFIG_PATH = resolve(process.cwd(), "krab.json");
 const ENV_PATH = resolve(process.cwd(), ".env");

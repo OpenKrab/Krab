@@ -1,7 +1,7 @@
 // ============================================================
 // 🦀 Krab — Vector Memory (Long-term Memory with Embeddings)
 // ============================================================
-import { pipeline, Pipeline } from "@xenova/transformers";
+// Transformers is imported dynamically to prevent sharp C++ binding crashes on boot
 import Database from "better-sqlite3";
 import { resolve } from "path";
 import { existsSync, mkdirSync } from "fs";
@@ -24,7 +24,7 @@ interface SearchResult {
 
 export class VectorMemory {
   private db: Database.Database;
-  private embedder: Pipeline | null = null;
+  private embedder: any | null = null;
   private readonly workspace: string;
   private readonly modelName = "nomic-ai/nomic-embed-text-v1.5";
 
@@ -63,6 +63,11 @@ export class VectorMemory {
         message_index INTEGER
       );
 
+      CREATE VIRTUAL TABLE IF NOT EXISTS vectors_fts USING fts5(
+        id UNINDEXED,
+        content
+      );
+
       CREATE INDEX IF NOT EXISTS idx_conversation ON vectors(conversation_id);
       CREATE INDEX IF NOT EXISTS idx_timestamp ON vectors(timestamp);
     `);
@@ -87,13 +92,16 @@ export class VectorMemory {
   private async initializeEmbedder(): Promise<void> {
     try {
       logger.info("[VectorMemory] Initializing embedder...");
+      const { pipeline } = await import("@xenova/transformers");
       this.embedder = await pipeline("feature-extraction", this.modelName, {
         quantized: true, // Use quantized model for speed
       });
       logger.info("[VectorMemory] Embedder ready");
     } catch (error) {
-      logger.error("[VectorMemory] Failed to initialize embedder:", error);
-      throw error;
+      logger.error(
+        "[VectorMemory] Failed to initialize embedder. This is often caused by 'sharp' native binding issues on Windows.",
+        error,
+      );
     }
   }
 
@@ -106,7 +114,7 @@ export class VectorMemory {
     content: string,
     metadata: Record<string, any> = {},
     conversationId?: string,
-    messageIndex?: number
+    messageIndex?: number,
   ): Promise<string> {
     if (!this.embedder) {
       throw new Error("Embedder not initialized");
@@ -119,11 +127,11 @@ export class VectorMemory {
       // Generate embedding
       const output = await this.embedder(content, {
         pooling: "mean",
-        normalize: true
+        normalize: true,
       });
 
       // Convert to array
-      const vector = Array.from(output.data);
+      const vector = Array.from(output.data) as number[];
 
       // Store in database
       const metadataJson = JSON.stringify(metadata);
@@ -136,19 +144,27 @@ export class VectorMemory {
         metadataJson,
         timestamp,
         conversationId || null,
-        messageIndex || null
+        messageIndex || null,
       );
+
+      // Sync with FTS
+      this.db
+        .prepare("INSERT INTO vectors_fts (id, content) VALUES (?, ?)")
+        .run(id, content);
 
       logger.debug(`[VectorMemory] Added entry ${id}`);
       return id;
-
     } catch (error) {
       logger.error("[VectorMemory] Failed to add entry:", error);
       throw error;
     }
   }
 
-  async search(query: string, limit: number = 10, threshold: number = 0.1): Promise<SearchResult[]> {
+  async search(
+    query: string,
+    limit: number = 10,
+    threshold: number = 0.1,
+  ): Promise<SearchResult[]> {
     if (!this.embedder) {
       throw new Error("Embedder not initialized");
     }
@@ -157,9 +173,9 @@ export class VectorMemory {
       // Generate query embedding
       const output = await this.embedder(query, {
         pooling: "mean",
-        normalize: true
+        normalize: true,
       });
-      const queryVector = Array.from(output.data);
+      const queryVector = Array.from(output.data) as number[];
 
       // Get all vectors from database
       const rows = this.db.prepare("SELECT * FROM vectors").all() as any[];
@@ -179,9 +195,9 @@ export class VectorMemory {
               metadata: JSON.parse(row.metadata || "{}"),
               timestamp: new Date(row.timestamp),
               conversationId: row.conversation_id,
-              messageIndex: row.message_index
+              messageIndex: row.message_index,
             },
-            score
+            score,
           });
         }
       }
@@ -190,7 +206,6 @@ export class VectorMemory {
       results.sort((a, b) => b.score - a.score);
 
       return results.slice(0, limit);
-
     } catch (error) {
       logger.error("[VectorMemory] Search failed:", error);
       throw error;
@@ -222,13 +237,26 @@ export class VectorMemory {
     return dotProduct / (normA * normB);
   }
 
-  async searchByConversation(conversationId: string, query?: string, limit: number = 10): Promise<SearchResult[]> {
-    const stmt = this.db.prepare("SELECT * FROM vectors WHERE conversation_id = ? ORDER BY message_index ASC");
-    const rows = stmt.all(conversationId) as any[];
+  async keywordSearch(
+    query: string,
+    limit: number = 10,
+  ): Promise<SearchResult[]> {
+    try {
+      // Simple FTS5 query
+      const rows = this.db
+        .prepare(
+          `
+        SELECT v.*, bm25(vectors_fts) as rank
+        FROM vectors v
+        JOIN vectors_fts f ON v.id = f.id
+        WHERE vectors_fts MATCH ?
+        ORDER BY rank
+        LIMIT ?
+      `,
+        )
+        .all(query, limit) as any[];
 
-    if (!query) {
-      // Return all entries for conversation
-      return rows.map(row => ({
+      return rows.map((row) => ({
         entry: {
           id: row.id,
           content: row.content,
@@ -236,15 +264,93 @@ export class VectorMemory {
           metadata: JSON.parse(row.metadata || "{}"),
           timestamp: new Date(row.timestamp),
           conversationId: row.conversation_id,
-          messageIndex: row.message_index
+          message_index: row.message_index,
         },
-        score: 1.0
-      })).slice(-limit);
+        score: Math.max(0, 1 - Math.abs(row.rank / 10)), // Normalize BM25 rank (rough)
+      }));
+    } catch (error) {
+      logger.warn(`[VectorMemory] Keyword search failed: ${error}`);
+      return [];
+    }
+  }
+
+  async hybridSearch(
+    query: string,
+    limit: number = 10,
+    options: { vectorWeight?: number; textWeight?: number } = {},
+  ): Promise<SearchResult[]> {
+    const vectorWeight = options.vectorWeight ?? 0.7;
+    const textWeight = options.textWeight ?? 0.3;
+
+    const [vectorResults, textResults] = await Promise.all([
+      this.search(query, limit * 2),
+      this.keywordSearch(query, limit * 2),
+    ]);
+
+    const merged = new Map<string, SearchResult>();
+
+    // Add vector results
+    for (const res of vectorResults) {
+      merged.set(res.entry.id, {
+        ...res,
+        score: res.score * vectorWeight,
+      });
+    }
+
+    // Blend with text results
+    for (const res of textResults) {
+      const existing = merged.get(res.entry.id);
+      if (existing) {
+        existing.score += res.score * textWeight;
+      } else {
+        merged.set(res.entry.id, {
+          ...res,
+          score: res.score * textWeight,
+        });
+      }
+    }
+
+    // Final sort and slice
+    return Array.from(merged.values())
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+  }
+
+  async searchByConversation(
+    conversationId: string,
+    query?: string,
+    limit: number = 10,
+  ): Promise<SearchResult[]> {
+    const stmt = this.db.prepare(
+      "SELECT * FROM vectors WHERE conversation_id = ? ORDER BY message_index ASC",
+    );
+    const rows = stmt.all(conversationId) as any[];
+
+    if (!query) {
+      // Return all entries for conversation
+      return rows
+        .map((row) => ({
+          entry: {
+            id: row.id,
+            content: row.content,
+            vector: JSON.parse(row.vector),
+            metadata: JSON.parse(row.metadata || "{}"),
+            timestamp: new Date(row.timestamp),
+            conversationId: row.conversation_id,
+            messageIndex: row.message_index,
+          },
+          score: 1.0,
+        }))
+        .slice(-limit);
     }
 
     // Search within conversation
     const results: SearchResult[] = [];
-    const queryVector = query ? await this.embedder!(query, { pooling: "mean", normalize: true }).then(output => Array.from(output.data)) : [];
+    const queryVector = query
+      ? await this.embedder!(query, { pooling: "mean", normalize: true }).then(
+          (output: any) => Array.from(output.data) as number[],
+        )
+      : [];
 
     for (const row of rows) {
       let score = 1.0;
@@ -261,9 +367,9 @@ export class VectorMemory {
           metadata: JSON.parse(row.metadata || "{}"),
           timestamp: new Date(row.timestamp),
           conversationId: row.conversation_id,
-          messageIndex: row.message_index
+          messageIndex: row.message_index,
         },
-        score
+        score,
       });
     }
 
@@ -290,20 +396,26 @@ export class VectorMemory {
     const countStmt = this.db.prepare("SELECT COUNT(*) as count FROM vectors");
     const totalEntries = (countStmt.get() as any).count;
 
-    const convStmt = this.db.prepare("SELECT COUNT(DISTINCT conversation_id) as count FROM vectors WHERE conversation_id IS NOT NULL");
+    const convStmt = this.db.prepare(
+      "SELECT COUNT(DISTINCT conversation_id) as count FROM vectors WHERE conversation_id IS NOT NULL",
+    );
     const totalConversations = (convStmt.get() as any).count;
 
-    const oldestStmt = this.db.prepare("SELECT MIN(timestamp) as oldest FROM vectors");
+    const oldestStmt = this.db.prepare(
+      "SELECT MIN(timestamp) as oldest FROM vectors",
+    );
     const oldest = (oldestStmt.get() as any).oldest;
 
-    const newestStmt = this.db.prepare("SELECT MAX(timestamp) as newest FROM vectors");
+    const newestStmt = this.db.prepare(
+      "SELECT MAX(timestamp) as newest FROM vectors",
+    );
     const newest = (newestStmt.get() as any).newest;
 
     return {
       totalEntries,
       totalConversations,
       oldestEntry: oldest ? new Date(oldest) : null,
-      newestEntry: newest ? new Date(newest) : null
+      newestEntry: newest ? new Date(newest) : null,
     };
   }
 
@@ -320,37 +432,59 @@ export class VectorMemory {
     messageIndex: number,
     content: string,
     role: string,
-    metadata: Record<string, any> = {}
+    metadata: Record<string, any> = {},
   ): Promise<string> {
     const fullMetadata = {
       ...metadata,
       role,
       conversationId,
-      messageIndex
+      messageIndex,
     };
 
-    return await this.addEntry(content, fullMetadata, conversationId, messageIndex);
+    return await this.addEntry(
+      content,
+      fullMetadata,
+      conversationId,
+      messageIndex,
+    );
   }
 
   // Batch add multiple messages
   async addConversationMessages(
     conversationId: string,
-    messages: Array<{ content: string; role: string; index: number; metadata?: Record<string, any> }>
+    messages: Array<{
+      content: string;
+      role: string;
+      index: number;
+      metadata?: Record<string, any>;
+    }>,
   ): Promise<string[]> {
-    const promises = messages.map(msg =>
-      this.addConversationMessage(conversationId, msg.index, msg.content, msg.role, msg.metadata)
+    const promises = messages.map((msg) =>
+      this.addConversationMessage(
+        conversationId,
+        msg.index,
+        msg.content,
+        msg.role,
+        msg.metadata,
+      ),
     );
 
     return await Promise.all(promises);
   }
 
   // Semantic search across all conversations
-  async semanticSearch(query: string, limit: number = 10): Promise<SearchResult[]> {
-    return await this.search(query, limit);
+  async semanticSearch(
+    query: string,
+    limit: number = 10,
+  ): Promise<SearchResult[]> {
+    return await this.hybridSearch(query, limit);
   }
 
   // Find similar messages
-  async findSimilar(content: string, limit: number = 5): Promise<SearchResult[]> {
+  async findSimilar(
+    content: string,
+    limit: number = 5,
+  ): Promise<SearchResult[]> {
     return await this.search(content, limit, 0.7); // Higher threshold for similarity
   }
 }

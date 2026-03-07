@@ -1,8 +1,8 @@
 // ============================================================
 // 🦀 Krab SDK — Tool Integration Helpers
 // ============================================================
-import { ToolDefinition as Tool, ToolResult } from '../core/types.js';
-import { KrabSDK, ToolExecutionOptions, SDKResponse } from './index.js';
+import { ToolDefinition as Tool, ToolResult } from "../core/types.js";
+import { KrabSDK, ToolExecutionOptions, SDKResponse } from "./index.js";
 
 export interface ToolWrapper {
   name: string;
@@ -37,7 +37,9 @@ export class ToolManager {
   // Register a tool set
   registerToolSet(toolSet: ToolSet): void {
     this.toolSets.set(toolSet.name, toolSet);
-    console.log(`[ToolManager] Registered tool set: ${toolSet.name} (${toolSet.tools.length} tools)`);
+    console.log(
+      `[ToolManager] Registered tool set: ${toolSet.name} (${toolSet.tools.length} tools)`,
+    );
   }
 
   // Unregister a tool set
@@ -65,10 +67,14 @@ export class ToolManager {
   }
 
   // Execute a tool by name
-  async executeTool(name: string, params: any, options: Partial<ToolExecutionOptions> = {}): Promise<SDKResponse<any>> {
+  async executeTool(
+    name: string,
+    params: any,
+    options: Partial<ToolExecutionOptions> = {},
+  ): Promise<SDKResponse<any>> {
     // Find tool in tool sets
     for (const toolSet of this.toolSets.values()) {
-      const tool = toolSet.tools.find(t => t.name === name);
+      const tool = toolSet.tools.find((t) => t.name === name);
       if (tool) {
         return this.executeToolWrapper(tool, params, options);
       }
@@ -86,15 +92,15 @@ export class ToolManager {
       metadata: {
         requestId: `tool-${Date.now()}`,
         timestamp: new Date(),
-        duration: 0
-      }
+        duration: 0,
+      },
     };
   }
 
   private async executeToolWrapper(
     tool: ToolWrapper,
     params: any,
-    options: Partial<ToolExecutionOptions>
+    options: Partial<ToolExecutionOptions>,
   ): Promise<SDKResponse<any>> {
     const startTime = Date.now();
 
@@ -109,8 +115,8 @@ export class ToolManager {
             metadata: {
               requestId: `tool-${Date.now()}`,
               timestamp: new Date(),
-              duration: Date.now() - startTime
-            }
+              duration: Date.now() - startTime,
+            },
           };
         }
       }
@@ -119,7 +125,7 @@ export class ToolManager {
       const result = await this.sdk.executeTool({
         tool: tool.name,
         parameters: params,
-        ...options
+        ...options,
       });
 
       // Transform result if transformer exists
@@ -132,9 +138,8 @@ export class ToolManager {
         success: result.success,
         data: finalResult,
         error: result.error,
-        metadata: result.metadata
+        metadata: result.metadata,
       };
-
     } catch (error) {
       return {
         success: false,
@@ -142,15 +147,20 @@ export class ToolManager {
         metadata: {
           requestId: `tool-${Date.now()}`,
           timestamp: new Date(),
-          duration: Date.now() - startTime
-        }
+          duration: Date.now() - startTime,
+        },
       };
     }
   }
 
   // Get available tools
-  getAvailableTools(): Array<{ name: string; description: string; source: string }> {
-    const tools: Array<{ name: string; description: string; source: string }> = [];
+  getAvailableTools(): Array<{
+    name: string;
+    description: string;
+    source: string;
+  }> {
+    const tools: Array<{ name: string; description: string; source: string }> =
+      [];
 
     // Add tools from tool sets
     for (const [setName, toolSet] of this.toolSets.entries()) {
@@ -158,7 +168,7 @@ export class ToolManager {
         tools.push({
           name: tool.name,
           description: tool.description,
-          source: setName
+          source: setName,
         });
       }
     }
@@ -168,7 +178,7 @@ export class ToolManager {
       tools.push({
         name,
         description: tool.description,
-        source: 'custom'
+        source: "custom",
       });
     }
 
@@ -176,12 +186,17 @@ export class ToolManager {
   }
 
   // Get tool sets
-  getToolSets(): Array<{ name: string; description: string; version: string; toolCount: number }> {
-    return Array.from(this.toolSets.values()).map(set => ({
+  getToolSets(): Array<{
+    name: string;
+    description: string;
+    version: string;
+    toolCount: number;
+  }> {
+    return Array.from(this.toolSets.values()).map((set) => ({
       name: set.name,
       description: set.description,
       version: set.version,
-      toolCount: set.tools.length
+      toolCount: set.tools.length,
     }));
   }
 
@@ -193,14 +208,14 @@ export class ToolManager {
     options: {
       validateParams?: (params: any) => boolean | Promise<boolean>;
       transformResult?: (result: any) => any;
-    } = {}
+    } = {},
   ): ToolWrapper {
     return {
       name,
       description,
       execute: executor,
       validateParams: options.validateParams,
-      transformResult: options.transformResult
+      transformResult: options.transformResult,
     };
   }
 }
@@ -209,90 +224,93 @@ export class ToolManager {
 
 // Web Tools Set
 export const webToolsSet: ToolSet = {
-  name: 'web-tools',
-  description: 'Web browsing, searching, and content extraction tools',
-  version: '1.0.0',
+  name: "web-tools",
+  description: "Web browsing, searching, and content extraction tools",
+  version: "1.0.0",
   tools: [
     ToolManager.createToolWrapper(
-      'web_search',
-      'Search the web for information',
+      "web_search",
+      "Search the web for information",
       async (params: { query: string; limit?: number }) => {
         // This will be executed through Krab
         return { query: params.query, results: [] };
       },
       {
-        validateParams: (params) => params && typeof params.query === 'string'
-      }
+        validateParams: (params) => params && typeof params.query === "string",
+      },
     ),
     ToolManager.createToolWrapper(
-      'web_fetch',
-      'Fetch content from a web page',
-      async (params: { url: string; format?: 'text' | 'html' | 'json' }) => {
-        return { url: params.url, content: '' };
+      "web_fetch",
+      "Fetch content from a web page",
+      async (params: { url: string; format?: "text" | "html" | "json" }) => {
+        return { url: params.url, content: "" };
       },
       {
-        validateParams: (params) => params && typeof params.url === 'string'
-      }
-    )
-  ]
+        validateParams: (params) => params && typeof params.url === "string",
+      },
+    ),
+  ],
 };
 
 // File Tools Set
 export const fileToolsSet: ToolSet = {
-  name: 'file-tools',
-  description: 'File system operations and content processing',
-  version: '1.0.0',
+  name: "file-tools",
+  description: "File system operations and content processing",
+  version: "1.0.0",
   tools: [
     ToolManager.createToolWrapper(
-      'file_read',
-      'Read content from a file',
+      "file_read",
+      "Read content from a file",
       async (params: { path: string; encoding?: string }) => {
-        return { path: params.path, content: '' };
+        return { path: params.path, content: "" };
       },
       {
-        validateParams: (params) => params && typeof params.path === 'string'
-      }
+        validateParams: (params) => params && typeof params.path === "string",
+      },
     ),
     ToolManager.createToolWrapper(
-      'file_write',
-      'Write content to a file',
+      "file_write",
+      "Write content to a file",
       async (params: { path: string; content: string; encoding?: string }) => {
         return { path: params.path, success: true };
       },
       {
-        validateParams: (params) => params && typeof params.path === 'string' && typeof params.content === 'string'
-      }
-    )
-  ]
+        validateParams: (params) =>
+          params &&
+          typeof params.path === "string" &&
+          typeof params.content === "string",
+      },
+    ),
+  ],
 };
 
 // AI/ML Tools Set
 export const aiToolsSet: ToolSet = {
-  name: 'ai-tools',
-  description: 'AI and machine learning tools',
-  version: '1.0.0',
+  name: "ai-tools",
+  description: "AI and machine learning tools",
+  version: "1.0.0",
   tools: [
     ToolManager.createToolWrapper(
-      'text_analyze',
-      'Analyze text for sentiment, entities, and topics',
+      "text_analyze",
+      "Analyze text for sentiment, entities, and topics",
       async (params: { text: string; analysis: string[] }) => {
         return { text: params.text, analysis: {} };
       },
       {
-        validateParams: (params) => params && typeof params.text === 'string'
-      }
+        validateParams: (params) => params && typeof params.text === "string",
+      },
     ),
     ToolManager.createToolWrapper(
-      'image_generate',
-      'Generate images from text descriptions',
+      "image_generate",
+      "Generate images from text descriptions",
       async (params: { prompt: string; size?: string; style?: string }) => {
-        return { prompt: params.prompt, imageUrl: '' };
+        return { prompt: params.prompt, imageUrl: "" };
       },
       {
-        validateParams: (params) => params && typeof params.prompt === 'string'
-      }
-    )
-  ]
+        validateParams: (params) => params && typeof params.prompt === "string",
+      },
+    ),
+  ],
 };
 
 // ── Plugin System ─────────────────────────────────────────────
@@ -324,7 +342,7 @@ export class PluginManager {
   }
 
   private setupEventForwarding(): void {
-    this.sdk.on('connected', () => {
+    this.sdk.on("connected", () => {
       for (const plugin of this.plugins.values()) {
         if (plugin.onConnect) {
           try {
@@ -336,7 +354,7 @@ export class PluginManager {
       }
     });
 
-    this.sdk.on('disconnected', () => {
+    this.sdk.on("disconnected", () => {
       for (const plugin of this.plugins.values()) {
         if (plugin.onDisconnect) {
           try {
@@ -348,7 +366,7 @@ export class PluginManager {
       }
     });
 
-    this.sdk.on('error', (error) => {
+    this.sdk.on("error", (error) => {
       for (const plugin of this.plugins.values()) {
         if (plugin.onError) {
           try {
@@ -373,11 +391,16 @@ export class PluginManager {
       }
 
       this.plugins.set(plugin.name, plugin);
-      console.log(`[PluginManager] Plugin loaded: ${plugin.name} v${plugin.version}`);
+      console.log(
+        `[PluginManager] Plugin loaded: ${plugin.name} v${plugin.version}`,
+      );
 
       return true;
     } catch (error) {
-      console.error(`[PluginManager] Failed to load plugin ${plugin.name}:`, error);
+      console.error(
+        `[PluginManager] Failed to load plugin ${plugin.name}:`,
+        error,
+      );
       return false;
     }
   }
@@ -404,7 +427,10 @@ export class PluginManager {
 
       return true;
     } catch (error) {
-      console.error(`[PluginManager] Failed to initialize plugin ${name}:`, error);
+      console.error(
+        `[PluginManager] Failed to initialize plugin ${name}:`,
+        error,
+      );
       return false;
     }
   }
@@ -434,12 +460,17 @@ export class PluginManager {
     }
   }
 
-  getLoadedPlugins(): Array<{ name: string; version: string; description: string; initialized: boolean }> {
+  getLoadedPlugins(): Array<{
+    name: string;
+    version: string;
+    description: string;
+    initialized: boolean;
+  }> {
     return Array.from(this.plugins.entries()).map(([name, plugin]) => ({
       name,
       version: plugin.version,
       description: plugin.description,
-      initialized: this.initializedPlugins.has(name)
+      initialized: this.initializedPlugins.has(name),
     }));
   }
 }
@@ -453,8 +484,7 @@ export function createPluginManager(sdk: KrabSDK): PluginManager {
   return new PluginManager(sdk);
 }
 
-// Export types
-export type { ToolWrapper, ToolSet, KrabPlugin };
+// Default exports
 
 // Default exports
 export default ToolManager;

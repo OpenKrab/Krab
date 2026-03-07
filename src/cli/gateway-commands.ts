@@ -17,11 +17,9 @@ import { loadConfig, saveConfig } from "../core/krab-config.js";
 import { GatewayServer } from "../gateway/server.js";
 import { MCPServer, createMCPServer } from "../mcp/server.js";
 import { MCPClient, createMCPClient } from "../mcp/client.js";
-import {
-  CronScheduler,
-  createScheduler,
-  jobTemplates,
-} from "../scheduler/cron.js";
+import * as CronStuff from "../scheduler/cron.js";
+import { CronScheduler } from "../scheduler/cron.js";
+const { createScheduler, jobTemplates } = CronStuff as any;
 
 // ── Gateway Commands ────────────────────────────────────────
 const gatewayCmd = new Command("gateway")

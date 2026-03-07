@@ -354,6 +354,22 @@ export class ConversationMemory {
     };
   }
 
+  getConversationStats(conversationId: string):
+    | {
+        messageCount: number;
+        hasSummary: boolean;
+        updatedAt: Date;
+      }
+    | undefined {
+    const conv = this.getConversation(conversationId);
+    if (!conv) return undefined;
+    return {
+      messageCount: conv.metadata.messageCount,
+      hasSummary: !!conv.summary,
+      updatedAt: conv.metadata.updatedAt,
+    };
+  }
+
   searchConversations(query: string): ConversationState[] {
     const lowerQuery = query.toLowerCase();
     return this.getAllConversations().filter((conv) => {

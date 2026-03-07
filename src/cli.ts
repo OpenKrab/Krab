@@ -10,9 +10,14 @@ import { registry } from "./tools/registry.js";
 import { logger } from "./utils/logger.js";
 import { GatewayServer } from "./gateway/server.js";
 import { runChat } from "./tui/chat.js";
-import { startTUI } from "./tui/ink-app.js";
 import { runOnboarding } from "./cli/onboarding.js";
-import { gatewayCmd, configCmd, channelsCmd, mcpCmd, jobCmd } from "./cli/gateway-commands.js";
+import {
+  gatewayCmd,
+  configCmd,
+  channelsCmd,
+  mcpCmd,
+  jobCmd,
+} from "./cli/gateway-commands.js";
 
 // ── Register Built-in Tools ────────────────────────────────
 import { datetimeTool } from "./tools/built-in/datetime.js";
@@ -142,11 +147,14 @@ import { obsidianTools } from "./tools/built-in/obsidian.js";
 for (const tool of obsidianTools) {
   registry.register(tool);
 }
+
+// ── Register Obsidian Commands ───────────────────────────────
+import { obsidianCommand } from "./cli/obsidian-simple.js";
 // ── Register Scheduler Commands ───────────────────────────────
 import { createSchedulerCommands } from "./scheduler/cli.js";
 
 // ── Banner ─────────────────────────────────────────────────
-import { showBanner } from "./utils/banner.js";
+import { printBanner, printKeyValue } from "./tui/style.js";
 
 // ── Register Banner Command ───────────────────────────────
 import { bannerCommand } from "./cli/banner-commands.js";
@@ -213,6 +221,7 @@ program.addCommand(pluginsCommand);
 program.addCommand(execApprovalsCommand);
 program.addCommand(voicecallCommand);
 program.addCommand(hooksCommand);
+program.addCommand(obsidianCommand);
 
 // ── Handle Special Commands ────────────────────────────────
 function handleSpecialCommand(input: string, agent: Agent): boolean {
@@ -238,9 +247,15 @@ function handleSpecialCommand(input: string, agent: Agent): boolean {
     console.log(pc.cyan("\n🧠 Memory Status:"));
     console.log(`  Total conversations: ${stats.totalConversations}`);
     console.log(`  Total messages: ${stats.totalMessages}`);
-    console.log(`  Average messages per conversation: ${stats.averageMessagesPerConversation}`);
-    console.log(`  Oldest conversation: ${stats.oldestConversation?.toLocaleDateString() || "None"}`);
-    console.log(`  Newest conversation: ${stats.newestConversation?.toLocaleDateString() || "None"}`);
+    console.log(
+      `  Average messages per conversation: ${stats.averageMessagesPerConversation}`,
+    );
+    console.log(
+      `  Oldest conversation: ${stats.oldestConversation?.toLocaleDateString() || "None"}`,
+    );
+    console.log(
+      `  Newest conversation: ${stats.newestConversation?.toLocaleDateString() || "None"}`,
+    );
     console.log();
     return true;
   }
@@ -254,8 +269,12 @@ function handleSpecialCommand(input: string, agent: Agent): boolean {
   if (cmd === "/debug") {
     const config = agent.getConfig();
     console.log(pc.cyan("\n🐛 Debug Info:"));
-    console.log(`  Provider: ${config.agents?.defaults?.model?.primary || config.provider?.name || "Not configured"}`);
-    console.log(`  Model: ${config.agents?.defaults?.model?.primary || config.provider?.model || "Not configured"}`);
+    console.log(
+      `  Provider: ${config.agents?.defaults?.model?.primary || config.provider?.name || "Not configured"}`,
+    );
+    console.log(
+      `  Model: ${config.agents?.defaults?.model?.primary || config.provider?.model || "Not configured"}`,
+    );
     console.log(`  Max Iterations: ${config.maxIterations || 5}`);
     console.log(`  Max Retries: ${config.maxRetries || 5}`);
     console.log(`  Memory Limit: ${config.memoryLimit || 50}`);
@@ -270,29 +289,39 @@ function handleSpecialCommand(input: string, agent: Agent): boolean {
     console.log(pc.cyan("\n🧩 Plugins:"));
     if (stats.total === 0) {
       console.log("  No plugins installed.");
-      console.log(pc.dim("  Install plugins to ~/.krab/plugins/ or ./krab-plugins/"));
+      console.log(
+        pc.dim("  Install plugins to ~/.krab/plugins/ or ./krab-plugins/"),
+      );
     } else {
       for (const plugin of pluginLoader.list()) {
-        const status = plugin.status === "loaded" 
-          ? pc.green("✅") 
-          : plugin.status === "error" 
-            ? pc.red("❌") 
-            : pc.yellow("⏸️");
-        const tools = plugin.registeredTools.length > 0
-          ? pc.dim(` (tools: ${plugin.registeredTools.join(", ")})`)
-          : "";
-        console.log(`  ${status} ${pc.bold(plugin.manifest.name)} v${plugin.manifest.version}${tools}`);
+        const status =
+          plugin.status === "loaded"
+            ? pc.green("✅")
+            : plugin.status === "error"
+              ? pc.red("❌")
+              : pc.yellow("⏸️");
+        const tools =
+          plugin.registeredTools.length > 0
+            ? pc.dim(` (tools: ${plugin.registeredTools.join(", ")})`)
+            : "";
+        console.log(
+          `  ${status} ${pc.bold(plugin.manifest.name)} v${plugin.manifest.version}${tools}`,
+        );
         if (plugin.error) {
           console.log(`     ${pc.red(plugin.error)}`);
         }
       }
-      console.log(pc.dim(`\n  Total: ${stats.loaded} loaded, ${stats.error} errors, ${stats.disabled} disabled`));
+      console.log(
+        pc.dim(
+          `\n  Total: ${stats.loaded} loaded, ${stats.error} errors, ${stats.disabled} disabled`,
+        ),
+      );
     }
     console.log();
     return true;
   }
 
-    if (cmd === "/help") {
+  if (cmd === "/help") {
     console.log(pc.cyan("\n📚 Commands:"));
     console.log("  /plugins — Show loaded plugins");
     console.log("  /tools   — List all registered tools");
@@ -309,61 +338,8 @@ function handleSpecialCommand(input: string, agent: Agent): boolean {
 }
 
 // ── Interactive Chat Loop ──────────────────────────────────
-async function startChat() {
-  showBanner();
-
-  const config = loadConfig();
-  const providerName = config.agents?.defaults?.model?.primary || config.provider?.name || "unknown";
-  const modelName = config.agents?.defaults?.model?.primary || config.provider?.model || "unknown";
-  
-  console.log(
-    pc.dim(
-      `  Provider: ${pc.bold(providerName)} | Model: ${pc.bold(modelName)}`,
-    ),
-  );
-  console.log(pc.dim(`  Tools: ${registry.getNames().join(", ")}`));
-  console.log(pc.dim(`  Type /help for commands\n`));
-
-  const agent = new Agent(config);
-
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  while (true) {
-    const input = await rl.question(pc.green("🦀 You: "));
-    const trimmed = input.trim();
-
-    if (!trimmed) continue;
-    if (trimmed === "/exit" || trimmed === "/quit") {
-      console.log(pc.red("\n👋 Bye from Krab! 🦀\n"));
-      break;
-    }
-
-    // Handle special commands
-    if (trimmed.startsWith("/")) {
-      if (handleSpecialCommand(trimmed, agent)) continue;
-      console.log(
-        pc.yellow(
-          `Unknown command: ${trimmed}. Type /help for available commands.\n`,
-        ),
-      );
-      continue;
-    }
-
-    // Chat with agent
-    console.log(pc.dim("🤔 Thinking..."));
-    const startTime = Date.now();
-    const response = await agent.chat(trimmed);
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-
-    console.log(pc.blue(`\n🦀 Krab: `) + response);
-    console.log(pc.dim(`  ⏱️ ${elapsed}s\n`));
-  }
-
-  rl.close();
-}
+// Now handled by runChat() imported from src/tui/chat.ts
+// ───────────────────────────────────────────────────────────
 
 // ── CLI Program (already defined above) ─────────────────────────
 
@@ -373,9 +349,9 @@ program
   .action(() => runChat());
 
 program
-  .command("tui")
-  .description("Start interactive chat with Krab using modern Ink-based TUI")
-  .action(() => startTUI());
+  .command("chat")
+  .description("Start interactive chat with Krab (classic mode)")
+  .action(() => runChat());
 
 // gatewayCmd, configCmd, channelsCmd, mcpCmd, jobCmd already added above
 
@@ -404,7 +380,7 @@ program.action(async () => {
     // Try to load config
     loadConfig();
     // If successful, start chat
-    await startChat();
+    await runChat();
   } catch (err: any) {
     // No config found - suggest onboarding
     console.log(pc.bgCyan(pc.black(" 🦀 Krab ")));
@@ -425,7 +401,7 @@ async function loadPlugins() {
     const stats = pluginLoader.count();
     if (stats.total > 0) {
       logger.info(
-        `[🧩 Plugins] ${stats.loaded} loaded, ${stats.error} errors, ${stats.disabled} disabled`
+        `[🧩 Plugins] ${stats.loaded} loaded, ${stats.error} errors, ${stats.disabled} disabled`,
       );
     }
   } catch (err) {
@@ -437,4 +413,3 @@ async function loadPlugins() {
 loadPlugins().then(() => {
   program.parse();
 });
-
