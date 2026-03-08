@@ -9,6 +9,10 @@ import { existsSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { printBanner, printInfo, printSection, printWarning } from "../tui/style.js";
+import { sessionStore } from "../session/store.js";
+import { presenceTracker } from "../presence/tracker.js";
+import { memoryManager } from "../memory/manager.js";
+import { getGatewayStatusSnapshot } from "./gateway-commands.js";
 
 interface CheckResult {
   name: string;
@@ -19,10 +23,12 @@ interface CheckResult {
 
 async function runHealthCheck(): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
+  let configLoaded = false;
 
   // Check 1: Configuration
   try {
     const config = loadConfig();
+    configLoaded = true;
     results.push({
       name: "Configuration",
       status: "ok",
@@ -111,6 +117,71 @@ async function runHealthCheck(): Promise<CheckResult[]> {
     });
   }
 
+  const sessionCount = sessionStore.getTotalSessionCount();
+  results.push({
+    name: "Sessions",
+    status: sessionCount > 0 ? "ok" : "warn",
+    message:
+      sessionCount > 0
+        ? `${sessionCount} tracked session(s) available`
+        : "No tracked sessions found yet",
+    fix: sessionCount > 0 ? undefined : "Run `krab chat`, `krab ask`, or gateway flows to create sessions",
+  });
+
+  const presenceStats = presenceTracker.getStats();
+  results.push({
+    name: "Presence",
+    status: presenceStats.active > 0 ? "ok" : "warn",
+    message:
+      presenceStats.active > 0
+        ? `${presenceStats.active} active presence beacon(s)`
+        : "No active presence beacons recorded",
+    fix:
+      presenceStats.active > 0
+        ? undefined
+        : "Run `krab presence update --mode cli` or start the gateway to emit presence",
+  });
+
+  const memoryStatus = memoryManager.getStatus();
+  results.push({
+    name: "Memory Index",
+    status: memoryStatus.files > 0 || memoryStatus.conversations > 0 ? "ok" : "warn",
+    message:
+      memoryStatus.files > 0 || memoryStatus.conversations > 0
+        ? `${memoryStatus.files} memory file(s), ${memoryStatus.conversations} conversation record(s)`
+        : "Memory surface is empty",
+    fix:
+      memoryStatus.files > 0 || memoryStatus.conversations > 0
+        ? undefined
+        : "Use `krab memory files` or start a conversation to seed memory state",
+  });
+
+  if (configLoaded) {
+    const gatewayStatus = await getGatewayStatusSnapshot({ deep: true });
+    results.push({
+      name: "Gateway Runtime",
+      status: gatewayStatus.running ? "ok" : "warn",
+      message: gatewayStatus.running
+        ? `Gateway reachable on ${gatewayStatus.bind}:${gatewayStatus.port}`
+        : `Gateway is not reachable on port ${gatewayStatus.port}`,
+      fix: gatewayStatus.running ? undefined : "Run `krab gateway start` to bring the control plane online",
+    });
+
+    if (gatewayStatus.running && gatewayStatus.details) {
+      const ready = gatewayStatus.details.readiness?.configLoaded &&
+        gatewayStatus.details.readiness?.channelManagerReady &&
+        gatewayStatus.details.readiness?.defaultAgentReady;
+      results.push({
+        name: "Gateway Readiness",
+        status: ready ? "ok" : "warn",
+        message: ready
+          ? "Gateway runtime subsystems report ready"
+          : "Gateway runtime started but one or more subsystems are not ready",
+        fix: ready ? undefined : "Inspect `krab gateway status --deep` for subsystem-level readiness",
+      });
+    }
+  }
+
   return results;
 }
 
@@ -158,19 +229,8 @@ function printResults(results: CheckResult[]) {
   let errorCount = 0;
 
   for (const result of results) {
-    const icon =
-      result.status === "ok"
-        ? pc.green("ONLINE")
-        : result.status === "warn"
-        ? pc.yellow("WARN")
-        : pc.red("FAULT");
-
-    const statusColor =
-      result.status === "ok"
-        ? pc.green
-        : result.status === "warn"
-        ? pc.yellow
-        : pc.red;
+    const icon = result.status === "ok" ? pc.green("✓") : result.status === "warn" ? pc.yellow("☢") : pc.red("✗");
+    const statusColor = result.status === "ok" ? pc.green : result.status === "warn" ? pc.yellow : pc.red;
 
     console.log(`${icon} ${pc.bold(result.name)} ${statusColor(result.status.toUpperCase())}`);
     console.log(`  ${result.message}`);
@@ -187,9 +247,9 @@ function printResults(results: CheckResult[]) {
 
   // Summary
   printSection("Summary");
-  console.log(`  ${pc.green(`${okCount} OK`)}`);
-  if (warnCount > 0) console.log(`  ${pc.yellow(`${warnCount} Warning(s)`)}`);
-  if (errorCount > 0) console.log(`  ${pc.red(`${errorCount} Error(s)`)}`);
+  console.log(`  ${pc.green("✓")} ${pc.green(`${okCount} OK`)}`);
+  if (warnCount > 0) console.log(`  ${pc.yellow("☢")} ${pc.yellow(`${warnCount} Warning(s)`)}`);
+  if (errorCount > 0) console.log(`  ${pc.red("✗")} ${pc.red(`${errorCount} Error(s)`)}`);
 
   if (errorCount > 0) {
     printWarning("Health check failed. Resolve faults before continued operation.");

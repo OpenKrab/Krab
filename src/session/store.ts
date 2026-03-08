@@ -98,6 +98,20 @@ export class SessionStore {
     return Array.from(this.sessions.values());
   }
 
+  getActiveSessionCount(): number {
+    return this.sessions.size;
+  }
+
+  getTotalSessionCount(): number {
+    return this.sessions.size;
+  }
+
+  getRecentSessions(limit = 5): SessionEntry[] {
+    return Array.from(this.sessions.values())
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .slice(0, limit);
+  }
+
   /**
    * Remove session
    */

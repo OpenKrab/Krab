@@ -8,6 +8,7 @@ import { SessionMaintenance, MaintenanceConfig } from "../session/maintenance.js
 import { loadConfig } from "../core/config.js";
 import * as path from "path";
 import * as os from "os";
+import { printBanner, printInfo, printKeyValue, printSection, printWarning } from "../tui/style.js";
 
 // ── Session Commands ────────────────────────────────────────
 const sessionCmd = new Command("session")
@@ -66,11 +67,19 @@ async function listSessions(options?: { json?: boolean }): Promise<void> {
   }
 
   if (sessions.length === 0) {
-    console.log(pc.dim("No active sessions found."));
+    printBanner("Session Control Surface");
+    printSection("Session Inventory");
+    printWarning("No active sessions found.");
     return;
   }
 
-  console.log(pc.bold("Active Sessions"));
+  printBanner("Session Control Surface");
+  printSection("Session Inventory");
+  printKeyValue("Tracked Sessions", String(sessions.length));
+  printKeyValue(
+    "Active Summary",
+    `${sessionStore.getActiveSessionCount()} active // ${sessionStore.getTotalSessionCount()} total`,
+  );
   console.log("");
 
   for (const session of sessions) {
@@ -88,25 +97,29 @@ async function showSessionInfo(sessionKey: string): Promise<void> {
   const session = sessionStore.getSession(sessionKey);
 
   if (!session) {
-    console.log(pc.red(`Session "${sessionKey}" not found.`));
+    printBanner("Session Control Surface");
+    printSection("Session Inspect");
+    printWarning(`Session "${sessionKey}" not found.`);
     return;
   }
 
-  console.log(pc.bold(`Session: ${session.sessionKey}`));
+  printBanner("Session Control Surface");
+  printSection("Session Inspect");
+  printKeyValue("Session Key", session.sessionKey);
+  printKeyValue("Session ID", session.sessionId);
+  printKeyValue("Channel", session.channel);
+  printKeyValue("Last Channel", session.lastChannel);
+  printKeyValue("Mode", session.mode);
+  printKeyValue("Sender ID", session.senderId);
+  printKeyValue("Group ID", session.groupId || "N/A");
+  printKeyValue("Thread ID", session.threadId || "N/A");
+  printKeyValue("Message Count", String(session.messageCount));
+  printKeyValue("Queue Mode", session.queueMode);
+  printKeyValue("Reply Back", String(session.replyBack));
+  printKeyValue("Created", session.createdAt.toLocaleString());
+  printKeyValue("Updated", session.updatedAt.toLocaleString());
+  printKeyValue("Age", `${Math.floor((Date.now() - session.createdAt.getTime()) / (1000 * 60 * 60))} hours`);
   console.log("");
-  console.log(`Session ID: ${session.sessionId}`);
-  console.log(`Channel: ${session.channel}`);
-  console.log(`Last Channel: ${session.lastChannel}`);
-  console.log(`Mode: ${session.mode}`);
-  console.log(`Sender ID: ${session.senderId}`);
-  console.log(`Group ID: ${session.groupId || "N/A"}`);
-  console.log(`Thread ID: ${session.threadId || "N/A"}`);
-  console.log(`Message Count: ${session.messageCount}`);
-  console.log(`Queue Mode: ${session.queueMode}`);
-  console.log(`Reply Back: ${session.replyBack}`);
-  console.log(`Created: ${session.createdAt.toLocaleString()}`);
-  console.log(`Updated: ${session.updatedAt.toLocaleString()}`);
-  console.log(`Age: ${Math.floor((Date.now() - session.createdAt.getTime()) / (1000 * 60 * 60))} hours`);
 }
 
 async function cleanupSessions(options?: { dryRun?: boolean; json?: boolean }): Promise<void> {
@@ -135,12 +148,12 @@ async function cleanupSessions(options?: { dryRun?: boolean; json?: boolean }): 
   }
 
   if (maintenanceConfig.mode === "warn") {
-    console.log(pc.bold("Session Cleanup Analysis"));
-    console.log("");
+    printBanner("Session Control Surface");
+    printSection("Session Cleanup Analysis");
     if (result.warnings.length === 0) {
-      console.log(pc.green("✅ No cleanup needed"));
+      printInfo("No cleanup needed.");
     } else {
-      console.log(pc.yellow("⚠️  Cleanup recommendations:"));
+      printWarning("Cleanup recommendations detected.");
       for (const warning of result.warnings) {
         console.log(`  • ${warning}`);
       }
@@ -148,16 +161,16 @@ async function cleanupSessions(options?: { dryRun?: boolean; json?: boolean }): 
       console.log(pc.dim("Run with --dry-run=false to apply cleanup"));
     }
   } else {
-    console.log(pc.bold("Session Cleanup Results"));
-    console.log("");
-    console.log(`Pruned sessions: ${result.pruned}`);
-    console.log(`Archived transcripts: ${result.archived}`);
-    console.log(`Rotated sessions file: ${result.rotated ? "Yes" : "No"}`);
-    console.log(`Disk space freed: ${formatBytes(result.diskFreed)}`);
+    printBanner("Session Control Surface");
+    printSection("Session Cleanup Results");
+    printKeyValue("Pruned Sessions", String(result.pruned));
+    printKeyValue("Archived Transcripts", String(result.archived));
+    printKeyValue("Rotated Sessions File", result.rotated ? "Yes" : "No");
+    printKeyValue("Disk Space Freed", formatBytes(result.diskFreed));
 
     if (result.warnings.length > 0) {
       console.log("");
-      console.log(pc.yellow("Warnings:"));
+      printWarning("Warnings:");
       for (const warning of result.warnings) {
         console.log(`  • ${warning}`);
       }
@@ -184,18 +197,18 @@ async function showSessionStats(): Promise<void> {
   const newestSession = sessions.reduce((newest, s) =>
     !newest || s.updatedAt > newest.updatedAt ? s : newest, null as any);
 
-  console.log(pc.bold("Session Statistics"));
-  console.log("");
-  console.log(`Total Sessions: ${totalSessions}`);
-  console.log(`Total Messages: ${totalMessages}`);
-  console.log(`Average Messages per Session: ${totalSessions > 0 ? (totalMessages / totalSessions).toFixed(1) : 0}`);
+  printBanner("Session Control Surface");
+  printSection("Session Statistics");
+  printKeyValue("Total Sessions", String(totalSessions));
+  printKeyValue("Total Messages", String(totalMessages));
+  printKeyValue("Average Messages / Session", `${totalSessions > 0 ? (totalMessages / totalSessions).toFixed(1) : 0}`);
 
   if (oldestSession) {
-    console.log(`Oldest Session: ${oldestSession.sessionKey} (${oldestSession.createdAt.toLocaleDateString()})`);
+    printKeyValue("Oldest Session", `${oldestSession.sessionKey} (${oldestSession.createdAt.toLocaleDateString()})`);
   }
 
   if (newestSession) {
-    console.log(`Most Recent Activity: ${newestSession.sessionKey} (${newestSession.updatedAt.toLocaleString()})`);
+    printKeyValue("Most Recent Activity", `${newestSession.sessionKey} (${newestSession.updatedAt.toLocaleString()})`);
   }
 
   // Channel breakdown
@@ -206,7 +219,7 @@ async function showSessionStats(): Promise<void> {
 
   if (Object.keys(channelStats).length > 0) {
     console.log("");
-    console.log(pc.bold("Sessions by Channel:"));
+    printInfo("Sessions by channel:");
     for (const [channel, count] of Object.entries(channelStats)) {
       console.log(`  ${channel}: ${count}`);
     }

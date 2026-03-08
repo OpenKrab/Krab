@@ -1,0 +1,22 @@
+{
+  "messages": [
+    {
+      "role": "assistant",
+      "content": "[Error Recovery] LLM call failed: undefined. Retrying with simpler approach..."
+    },
+    {
+      "role": "assistant",
+      "content": "[Error Recovery] LLM call failed: undefined. Retrying with simpler approach..."
+    },
+    {
+      "role": "assistant",
+      "content": "[Error Recovery] LLM call failed: undefined. Retrying with simpler approach..."
+    }
+  ],
+  "metadata": {
+    "id": "default",
+    "createdAt": "2026-03-08T08:01:59.830Z",
+    "updatedAt": "2026-03-08T08:01:59.842Z",
+    "messageCount": 3
+  }
+}

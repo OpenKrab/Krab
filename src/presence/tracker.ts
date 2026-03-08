@@ -166,6 +166,22 @@ export class PresenceTracker {
     };
   }
 
+  getActiveCount(): number {
+    return this.getActivePresence().length;
+  }
+
+  listInstances(): Array<{
+    id: string;
+    type: PresenceEntry["mode"];
+    lastSeen: number;
+  }> {
+    return this.getActivePresence().map((entry) => ({
+      id: entry.instanceId || "unknown",
+      type: entry.mode,
+      lastSeen: entry.ts,
+    }));
+  }
+
   private generateInstanceId(): string {
     return `krab_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }

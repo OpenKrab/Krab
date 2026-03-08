@@ -742,11 +742,11 @@ describe('Krab Framework Integration', () => {
     const { GatewayServer } = await import('../gateway/server.js');
     const { Agent } = await import('../core/agent.js');
 
-    const chatSpy = vi.spyOn(Agent.prototype, 'chat').mockImplementationOnce(async (_input, options) => {
+    const chatStreamSpy = vi.spyOn(Agent.prototype, 'chatStream').mockImplementationOnce(async function* (_input, options) {
       await new Promise((_, reject) => {
         options?.signal?.addEventListener('abort', () => reject(new Error('ws stream aborted')));
       });
-      return 'unreachable';
+      yield { type: 'error' as const, error: 'unreachable', timestamp: Date.now() };
     });
 
     const gateway = new GatewayServer({
@@ -779,10 +779,10 @@ describe('Krab Framework Integration', () => {
     try {
       await runPromise;
 
-      expect(chatSpy).toHaveBeenCalled();
+      expect(chatStreamSpy).toHaveBeenCalled();
       expect(ws.send).toHaveBeenCalledWith(expect.stringContaining('ws stream aborted'));
     } finally {
-      chatSpy.mockRestore();
+      chatStreamSpy.mockRestore();
     }
   });
 
@@ -807,5 +807,72 @@ describe('Krab Framework Integration', () => {
     } finally {
       chatSpy.mockRestore();
     }
+  });
+
+  it('should respect provider detection order and fallback behavior', async () => {
+    // Mock environment variables to simulate multiple API keys
+    delete process.env.KRAB_PROVIDER;
+    delete process.env.KRAB_DEFAULT_MODEL;
+    delete process.env.KRAB_MODEL;
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GOOGLE_API_KEY;
+    delete process.env.DEEPSEEK_API_KEY;
+    delete process.env.OLLAMA_API_KEY;
+    delete process.env.OPENCODE_API_KEY;
+    process.env.OPENAI_API_KEY = "mock-openai-key";
+    process.env.KILOCODE_API_KEY = "mock-kilocode-key";
+    process.env.OPENROUTER_API_KEY = "mock-openrouter-key";
+
+    // Load config and check which provider is selected
+    const configModule = await import('../core/config.js');
+    const config = configModule.loadConfig();
+    expect(config.provider.name).toBe("openai");
+    expect(config.provider.apiKey).toBe("mock-openai-key");
+
+    // Unset OpenAI key and check if it falls back to the next in priority (anthropic not set, so openrouter)
+    delete process.env.OPENAI_API_KEY;
+    const config2 = configModule.loadConfig();
+    expect(config2.provider.name).toBe("openrouter");
+    expect(config2.provider.apiKey).toBe("mock-openrouter-key");
+
+    // Unset OpenRouter key and check fallback to kilocode
+    delete process.env.OPENROUTER_API_KEY;
+    const config3 = configModule.loadConfig();
+    expect(config3.provider.name).toBe("kilocode");
+    expect(config3.provider.apiKey).toBe("mock-kilocode-key");
+
+    // Restore environment
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.KILOCODE_API_KEY;
+  });
+
+  it('should respect explicit override via KRAB_PROVIDER', async () => {
+    // Set multiple API keys
+    delete process.env.KRAB_DEFAULT_MODEL;
+    delete process.env.KRAB_MODEL;
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GOOGLE_API_KEY;
+    delete process.env.DEEPSEEK_API_KEY;
+    delete process.env.OLLAMA_API_KEY;
+    delete process.env.OPENCODE_API_KEY;
+    delete process.env.OPENROUTER_API_KEY;
+    process.env.OPENAI_API_KEY = "mock-openai-key";
+    process.env.KILOCODE_API_KEY = "mock-kilocode-key";
+
+    // Explicitly override to kilocode
+    process.env.KRAB_PROVIDER = "kilocode";
+
+    const configModule = await import('../core/config.js');
+    const config = configModule.loadConfig();
+    expect(config.provider.name).toBe("kilocode");
+    expect(config.provider.apiKey).toBe("mock-kilocode-key");
+
+    // Restore environment
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.KILOCODE_API_KEY;
+    delete process.env.KRAB_PROVIDER;
   });
 });

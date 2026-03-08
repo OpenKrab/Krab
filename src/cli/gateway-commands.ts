@@ -21,6 +21,7 @@ import { pluginLoader } from "../plugins/loader.js";
 import * as CronStuff from "../scheduler/cron.js";
 import { CronScheduler } from "../scheduler/cron.js";
 const { createScheduler, jobTemplates } = CronStuff as any;
+import { buildGatewayRuntimeSnapshot } from "../gateway/runtime-state.js";
 
 // ── Gateway Commands ────────────────────────────────────────
 const gatewayCmd = new Command("gateway")
@@ -579,6 +580,61 @@ async function runGatewayDoctor(options: any): Promise<void> {
   } else {
     console.log(pc.green("\n✅ No issues found"));
   }
+
+  const gatewayStatus = await getGatewayStatusSnapshot({ deep: true });
+  const snapshot = gatewayStatus.details;
+  if (!snapshot) {
+    console.log(pc.gray("\nGateway runtime snapshot unavailable. Start the gateway and retry for deeper diagnostics."));
+    return;
+  }
+
+  console.log(pc.cyan("\n=== Gateway Runtime Snapshot ==="));
+  console.log(pc.bold("Uptime:"), pc.green(`${snapshot.uptimeSeconds ?? 0} seconds`));
+  console.log(pc.bold("Message Queue Depth:"), pc.yellow(snapshot.messageQueue?.depth ?? snapshot.queueDepth ?? 0));
+  console.log(pc.bold("Queue Pending:"), pc.yellow(snapshot.messageQueue?.pending ?? 0));
+  console.log(pc.bold("Queue Processing:"), pc.yellow(snapshot.messageQueue?.processing ?? 0));
+  console.log(pc.bold("Presence Active:"), pc.green(snapshot.presenceSummary?.active ?? snapshot.presence?.active ?? 0));
+  console.log(pc.bold("Sessions Active:"), pc.green(snapshot.sessionState?.activeCount ?? 0));
+  console.log(pc.bold("Sessions Total:"), pc.green(snapshot.sessionState?.totalCount ?? 0));
+  console.log(pc.bold("WebSocket Connections:"), pc.yellow(snapshot.websocket?.connections ?? 0));
+  console.log("");
+
+  console.log(pc.bold("Recent Messages:"));
+  const recentMessages = Array.isArray(snapshot.messageQueue?.recent) ? snapshot.messageQueue.recent : [];
+  if (recentMessages.length === 0) {
+    console.log(pc.gray("  No recent messages."));
+  } else {
+    for (const msg of recentMessages) {
+      console.log(pc.gray(`  [${msg.receivedAt}] ${msg.id} (${msg.channel || 'unknown'}): ${msg.status}`));
+    }
+  }
+  console.log("");
+
+  console.log(pc.bold("Recent Sessions:"));
+  const recentSessions = Array.isArray(snapshot.sessionState?.recent) ? snapshot.sessionState.recent : [];
+  if (recentSessions.length === 0) {
+    console.log(pc.gray("  No recent sessions."));
+  } else {
+    for (const sess of recentSessions) {
+      console.log(pc.gray(`  [${sess.lastActivity}] ${sess.id} (${sess.channel})`));
+    }
+  }
+  console.log("");
+
+  console.log(pc.bold("Presence Instances:"));
+  const presenceInstances = Array.isArray(snapshot.presenceSummary?.instances)
+    ? snapshot.presenceSummary.instances
+    : [];
+  if (presenceInstances.length === 0) {
+    console.log(pc.gray("  No presence instances."));
+  } else {
+    for (const inst of presenceInstances) {
+      console.log(pc.gray(`  [${inst.lastSeen}] ${inst.id} (${inst.type})`));
+    }
+  }
+  console.log("");
+
+  console.log(pc.gray("Run 'krab gateway check-health' for live health checks."));
 }
 
 async function manageConfig(key?: string, value?: string): Promise<void> {

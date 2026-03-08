@@ -58,3 +58,8 @@ class ToolRegistry {
 }
 
 export const registry = new ToolRegistry();
+
+// ── Tool Factory ────────────────────────────────────────────
+export function tool(def: ToolDefinition): ToolDefinition {
+  return def;
+}

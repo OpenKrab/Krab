@@ -1,13 +1,38 @@
 import * as readline from "node:readline/promises";
 import pc from "picocolors";
 import { stdin as input, stdout as output } from "node:process";
-import { Agent } from "../core/agent.js";
+import { Agent, getRecentTraces } from "../core/agent.js";
 import { loadConfig } from "../core/config.js";
 import { getSubagentRuntime } from "../agent/subagent-runtime.js";
 import { memoryManager } from "../memory/manager.js";
 import { getRoutingDiagnostics, clearRoutingDiagnostics } from "../messages/diagnostics.js";
 import { getToolExecutionDiagnostics, clearToolExecutionDiagnostics } from "../tools/diagnostics.js";
 import { printBanner, printKeyValue, printSection, printInfo, printWarning } from "./style.js";
+import { buildGatewayRuntimeSnapshot } from "../gateway/runtime-state.js";
+
+function renderTraces() {
+  const traces = getRecentTraces();
+  printSection("Recent Turn Traces");
+  if (traces.length === 0) {
+    printInfo("No traces recorded yet.");
+    console.log("");
+    return;
+  }
+
+  for (const trace of traces.slice(0, 5)) { // Show last 5
+    console.log(
+      `  ${pc.bold(trace.turnId)} ${pc.dim(`(${trace.duration}ms)`)}`,
+    );
+    console.log(`    ${pc.cyan("User")}: ${trace.userInput}`);
+    console.log(`    ${pc.green("Response")}: ${trace.responseGenerated.slice(0, 80)}${trace.responseGenerated.length > 80 ? "..." : ""}`);
+    console.log(`    ${pc.yellow("Tools")}: ${trace.toolsCalled.length} called`);
+    console.log(`    ${pc.magenta("Memory")}: ${trace.memoryRetrieved.length} items`);
+    if (trace.error) {
+      console.log(`    ${pc.red("Error")}: ${trace.error}`);
+    }
+    console.log("");
+  }
+}
 
 function renderHeader(agent: Agent) {
   const config = agent.getConfig();
@@ -32,6 +57,7 @@ function renderHelp() {
   console.log(`  ${pc.cyan("/tools")}                       ${pc.dim("Show recent tool execution traces")}`);
   console.log(`  ${pc.cyan("/tools filter <name>")}         ${pc.dim("Filter tool traces by tool name")}`);
   console.log(`  ${pc.cyan("/tools clear")}                 ${pc.dim("Clear tool trace buffer")}`);
+  console.log(`  ${pc.cyan("/trace")}                       ${pc.dim("Show recent turn traces")}`);
   console.log(`  ${pc.cyan("/clear")}                       ${pc.dim("Refresh the HUD")}`);
   console.log(`  ${pc.cyan("/exit")}                        ${pc.dim("Power down control grid")}`);
   console.log("");
@@ -60,12 +86,26 @@ export function renderSubagentInspect(agent: Agent, id: string) {
 function renderStatus(agent: Agent) {
   const config = agent.getConfig();
   const stats = agent.getMemoryStats();
+  const snapshot = buildGatewayRuntimeSnapshot({
+    startTime: Date.now(),
+    websocketConnections: 0,
+    channelStats: {},
+    conversationStats: stats,
+    agentIds: [],
+    configLoaded: true,
+    channelManagerReady: false,
+    defaultAgentReady: true,
+  });
   printSection("Runtime Status");
   printKeyValue("Debug", String(config.debug || false));
   printKeyValue("Max Iterations", String(config.maxIterations || 5));
   printKeyValue("Max Retries", String(config.maxRetries || 3));
   printKeyValue("Memory Conversations", String(stats.totalConversations));
   printKeyValue("Memory Messages", String(stats.totalMessages));
+  printKeyValue("Message Queue Depth", String(snapshot.messageQueue.depth));
+  printKeyValue("Queue Pending", String(snapshot.messageQueue.pending));
+  printKeyValue("Queue Processing", String(snapshot.messageQueue.processing));
+  printKeyValue("Presence Active", String(snapshot.presenceSummary.active));
   console.log("");
 }
 
@@ -207,7 +247,37 @@ async function handleChat(agent: Agent, content: string): Promise<void> {
   }
 
   process.stdout.write(pc.dim("⌁ calibrating reactor thought-path...\r"));
-  const response = await agent.chat(content);
+
+  const onProgress = (event: {
+    type: 'thinking' | 'tool_call' | 'tool_result';
+    content?: string;
+    name?: string;
+    args?: any;
+    result?: any;
+    timestamp?: number;
+  }) => {
+    process.stdout.write(" ".repeat(48) + "\r"); // Clear loading message
+
+    switch (event.type) {
+      case 'thinking':
+        console.log(pc.dim(`💭 ${event.content}`));
+        break;
+      case 'tool_call':
+        console.log(pc.cyan(`🔧 Using ${event.name}...`));
+        break;
+      case 'tool_result':
+        const icon = event.result?.success ? "✅" : "❌";
+        const resultText = event.result?.success
+          ? (event.result.output?.slice(0, 100) || "Success")
+          : (event.result.error?.slice(0, 100) || "Failed");
+        console.log(pc.dim(`${icon} ${event.name}: ${resultText}`));
+        break;
+    }
+
+    process.stdout.write(pc.dim("⌁ processing...\r"));
+  };
+
+  const response = await agent.chat(content, { onProgress });
   process.stdout.write(" ".repeat(48) + "\r");
   printSection("Assistant");
   console.log(`  ${response.replace(/\n/g, "\n  ")}`);
@@ -299,6 +369,11 @@ export async function runDashboard(): Promise<void> {
       clearToolExecutionDiagnostics();
       printInfo("Tool diagnostics cleared.");
       console.log("");
+      continue;
+    }
+
+    if (trimmed === "/trace") {
+      renderTraces();
       continue;
     }
 

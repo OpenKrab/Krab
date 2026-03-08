@@ -842,35 +842,102 @@ export class GatewayServer {
       const abortOnClose = () => abortController.abort("WebSocket stream client disconnected");
       ws.once("close", abortOnClose);
 
-      // Get full response
-      const response = await agent.chat(message.content, {
+      // Stream events from agent
+      for await (const event of agent.chatStream(message.content, {
         conversationId: sessionId,
         signal: abortController.signal,
-      });
-      ws.off("close", abortOnClose);
+      })) {
+        ws.off("close", abortOnClose);
 
-      // Stream in chunks
-      const chunkSize = 8;
-      for (let i = 0; i < response.length; i += chunkSize) {
-        const textChunk = response.slice(i, i + chunkSize);
-        ws.send(
-          JSON.stringify({
-            type: "chat.stream.delta",
-            content: textChunk,
-            sessionId,
-          }),
-        );
+        switch (event.type) {
+          case 'thinking':
+            ws.send(
+              JSON.stringify({
+                type: "chat.stream.delta",
+                content: `💭 ${event.content}`,
+                sessionId,
+                eventType: 'thinking',
+                timestamp: event.timestamp,
+              }),
+            );
+            break;
+
+          case 'tool_call':
+            ws.send(
+              JSON.stringify({
+                type: "chat.stream.delta",
+                content: `🔧 Using ${event.name}`,
+                sessionId,
+                eventType: 'tool_call',
+                toolName: event.name,
+                toolArgs: event.args,
+                timestamp: event.timestamp,
+              }),
+            );
+            break;
+
+          case 'tool_result':
+            const toolStatus = event.result.success ? "✅" : "❌";
+            const toolContent = event.result.success
+              ? event.result.output?.slice(0, 200) || "Success"
+              : event.result.error || "Failed";
+            ws.send(
+              JSON.stringify({
+                type: "chat.stream.delta",
+                content: `${toolStatus} ${event.name}: ${toolContent}`,
+                sessionId,
+                eventType: 'tool_result',
+                toolName: event.name,
+                toolResult: event.result,
+                timestamp: event.timestamp,
+              }),
+            );
+            break;
+
+          case 'response_chunk':
+            ws.send(
+              JSON.stringify({
+                type: "chat.stream.delta",
+                content: event.content,
+                sessionId,
+                eventType: 'response',
+                timestamp: event.timestamp,
+              }),
+            );
+            break;
+
+          case 'response_complete':
+            ws.send(
+              JSON.stringify({
+                type: "chat.stream.end",
+                sessionId,
+                fullContent: event.content,
+                timestamp: event.timestamp,
+              }),
+            );
+            break;
+
+          case 'trace_complete':
+            ws.send(
+              JSON.stringify({
+                type: "chat.trace",
+                trace: event.trace,
+                timestamp: event.timestamp,
+              }),
+            );
+            break;
+
+          case 'error':
+            ws.send(
+              JSON.stringify({
+                type: "error",
+                error: event.error,
+                timestamp: event.timestamp,
+              }),
+            );
+            break;
+        }
       }
-
-      // Send end
-      ws.send(
-        JSON.stringify({
-          type: "chat.stream.end",
-          sessionId,
-          timestamp: Date.now(),
-          fullContent: response,
-        }),
-      );
     } catch (error) {
       ws.send(
         JSON.stringify({

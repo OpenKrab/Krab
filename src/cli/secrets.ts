@@ -25,11 +25,11 @@ function maskSecret(value: string): string {
 }
 
 export const secretsCommand = new Command("secrets")
-  .description("Manage secrets and API keys")
+  .description("Manage encrypted vaults and API keys")
   .addCommand(
     new Command("list")
       .alias("ls")
-      .description("List all secrets")
+      .description("List all encrypted vaults and API keys")
       .option("--show", "Show full values (not recommended)")
       .action((options) => {
         const env = loadEnv();
@@ -38,13 +38,13 @@ export const secretsCommand = new Command("secrets")
         );
 
         if (secrets.length === 0) {
-          printWarning("No secrets registered in the active state profile.");
+          printWarning("No encrypted vaults or API keys registered in the active state profile.");
           console.log();
           return;
         }
 
-        printBanner("Secrets Control Surface");
-        printSection(`Secret Inventory // ${secrets.length} registered`);
+        printBanner("Encrypted Vault Control Surface");
+        printSection(`Vault Inventory // ${secrets.length} registered`);
 
         for (const [key, value] of secrets) {
           const displayValue = options.show ? value : maskSecret(value);
@@ -93,7 +93,7 @@ export const secretsCommand = new Command("secrets")
           }),
         );
 
-        printBanner("Secrets Audit Grid");
+        printBanner("Encrypted Vault Audit Grid");
         printSection(`Audit Matrix // ${audit.length} references`);
         for (const entry of audit) {
           const status = entry.resolved ? pc.green("ONLINE") : pc.red("FAULT");
@@ -104,29 +104,29 @@ export const secretsCommand = new Command("secrets")
   )
   .addCommand(
     new Command("set")
-      .description("Set a secret")
-      .argument("<key>", "Secret key")
-      .argument("<value>", "Secret value")
+      .description("Set an encrypted vault or API key")
+      .argument("<key>", "Encrypted vault or API key")
+      .argument("<value>", "Encrypted vault or API key value")
       .action((key, value) => {
         const env = loadEnv();
         env[key] = value;
         saveEnv(env);
 
-        printSection("Secrets Mutation");
+        printSection("Encrypted Vault Mutation");
         printInfo(`Stored ${key} in the active state profile.`);
-        printWarning("Restart Krab to guarantee all running surfaces reload the updated secret.");
+        printWarning("Restart Krab to guarantee all running surfaces reload the updated encrypted vault or API key.");
         console.log();
       })
   )
   .addCommand(
     new Command("get")
-      .description("Get a secret value")
-      .argument("<key>", "Secret key")
+      .description("Get an encrypted vault or API key value")
+      .argument("<key>", "Encrypted vault or API key")
       .action((key) => {
         const env = loadEnv();
         
         if (!(key in env)) {
-          printWarning(`Secret '${key}' not found.`);
+          printWarning(`Encrypted vault or API key '${key}' not found.`);
           console.log();
           process.exit(1);
         }
@@ -137,13 +137,13 @@ export const secretsCommand = new Command("secrets")
   .addCommand(
     new Command("remove")
       .alias("rm")
-      .description("Remove a secret")
-      .argument("<key>", "Secret key to remove")
+      .description("Remove an encrypted vault or API key")
+      .argument("<key>", "Encrypted vault or API key to remove")
       .action((key) => {
         const env = loadEnv();
         
         if (!(key in env)) {
-          printWarning(`Secret '${key}' not found.`);
+          printWarning(`Encrypted vault or API key '${key}' not found.`);
           console.log();
           process.exit(1);
         }
@@ -151,7 +151,7 @@ export const secretsCommand = new Command("secrets")
         delete env[key];
         saveEnv(env);
 
-        printSection("Secrets Mutation");
+        printSection("Encrypted Vault Mutation");
         printInfo(`Removed ${key} from the active state profile.`);
         console.log();
       })

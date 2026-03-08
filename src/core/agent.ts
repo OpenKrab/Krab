@@ -36,6 +36,21 @@ function loadPrompts() {
 const prompts = loadPrompts();
 const SYSTEM_PROMPT = prompts.agent.system;
 
+// Global trace store for recent turns
+const recentTraces: any[] = [];
+const MAX_TRACES = 10;
+
+function addTrace(trace: any) {
+  recentTraces.unshift(trace);
+  if (recentTraces.length > MAX_TRACES) {
+    recentTraces.pop();
+  }
+}
+
+export function getRecentTraces() {
+  return [...recentTraces];
+}
+
 export class Agent {
   private config: KrabConfig;
   private memory: ConversationMemory;
@@ -64,9 +79,29 @@ export class Agent {
       conversationId?: string;
       messages?: Message[];
       signal?: AbortSignal;
+      onProgress?: (event: {
+        type: 'thinking' | 'tool_call' | 'tool_result';
+        content?: string;
+        name?: string;
+        args?: any;
+        result?: any;
+        timestamp?: number;
+      }) => void;
     },
   ): Promise<string> {
     const conversationId = options?.conversationId || "default";
+    const trace = {
+      turnId: `turn_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      userInput,
+      conversationId,
+      memoryRetrieved: [] as any[],
+      toolsCalled: [] as any[],
+      responseGenerated: "",
+      startedAt: Date.now(),
+      completedAt: 0,
+      duration: 0,
+      error: null as string | null,
+    };
 
     // Update session metadata
     sessionStore.incrementMessageCount(conversationId);
@@ -89,7 +124,23 @@ export class Agent {
     await this.summarizeIfNeeded(conversationId, options?.signal);
 
     try {
-      const response = await this.reactLoop(conversationId, options?.signal);
+      const response = await this.reactLoop(conversationId, options?.signal, userInput, (event) => {
+        // Store trace events
+        if (event.type === 'thinking') {
+          // Could store thinking if needed
+        } else if (event.type === 'tool_call') {
+          trace.toolsCalled.push({
+            name: event.name,
+            args: event.args,
+            timestamp: event.timestamp
+          });
+        } else if (event.type === 'tool_result') {
+          // Results are already tracked
+        }
+
+        // Call onProgress if provided
+        options?.onProgress?.(event);
+      });
 
       // Update session for assistant response
       sessionStore.incrementMessageCount(conversationId);
@@ -101,6 +152,22 @@ export class Agent {
         timestamp: new Date(),
         sessionId: conversationId
       });
+
+      // Post-turn memory writeback
+      // TODO: Implement response fact extraction and long-term memory writeback
+      const facts = this.extractFactsFromResponse(response);
+      if (facts.length > 0) {
+        memoryManager.writeToLongTermMemory(facts.join('\n'));
+        logger.debug(`[Agent] Wrote ${facts.length} facts to long-term memory`);
+      }
+
+      // Complete trace
+      trace.responseGenerated = response;
+      trace.completedAt = Date.now();
+      trace.duration = trace.completedAt - trace.startedAt;
+
+      // Store trace
+      addTrace(trace);
 
       // Reflection step
       if (this.config.reflector?.enabled) {
@@ -144,7 +211,7 @@ export class Agent {
 
         // Reset iteration count and retry
         this.iterationCount = 0;
-        const improvedResponse = await this.reactLoop(conversationId, options?.signal);
+        const improvedResponse = await this.reactLoop(conversationId, options?.signal, userInput, options?.onProgress);
 
         // Reflect on the improved response too
         const secondReflection = await this.reflector.reflect(
@@ -250,7 +317,19 @@ export class Agent {
   }
 
   // ── ReAct Loop (Think → Act → Observe → Reflect) ──────────
-  private async reactLoop(conversationId: string, signal?: AbortSignal): Promise<string> {
+  private async reactLoop(
+    conversationId: string,
+    signal?: AbortSignal,
+    userInput?: string,
+    onProgress?: (event: {
+      type: 'thinking' | 'tool_call' | 'tool_result';
+      content?: string;
+      name?: string;
+      args?: any;
+      result?: any;
+      timestamp?: number;
+    }) => void
+  ): Promise<string> {
     let retryCount = 0;
     const maxIterations = this.config.maxIterations || 5;
     const maxRetries = this.config.maxRetries || 3;
@@ -277,9 +356,14 @@ export class Agent {
         messages = pruningResult.messages;
       }
 
+      // Retrieve relevant context from memory for this turn
+      const contextMessages = userInput ? await this.retrieveRelevantContext(userInput) : [];
+      const limitedContextMessages = contextMessages.slice(0, 3); // Limit to 3 most relevant
+
       // Ensure system prompt is at the top
       const llmMessages = [
         { role: "system" as Role, content: systemPrompt },
+        ...limitedContextMessages,
         ...messages.filter((m) => m.role !== "system"),
       ];
 
@@ -309,6 +393,13 @@ export class Agent {
         }
       }
 
+      // Report thinking progress
+      onProgress?.({
+        type: 'thinking',
+        content: output.thinking,
+        timestamp: Date.now()
+      });
+
       // 2. DECIDE — respond directly or use tools
       if (output.next_action === "respond" || output.tool_calls.length === 0) {
         // Final response
@@ -324,15 +415,33 @@ export class Agent {
           ),
         );
 
-        const results = await executeToolCalls(output.tool_calls, { agentId: conversationId });
+        // Report tool calls progress
+        for (const toolCall of output.tool_calls) {
+          onProgress?.({
+            type: 'tool_call',
+            name: toolCall.name,
+            args: toolCall.args,
+            timestamp: Date.now()
+          });
+        }
 
-        // 4. OBSERVE — Feed results back to memory
+        const results = await executeToolCalls(output.tool_calls, { agentId: conversationId, signal });
+
+        // 4. OBSERVE — Feed results back to memory and yield results
         for (const { name, result } of results) {
           const observation = result.success
             ? `Tool "${name}" succeeded:\n${result.output}`
             : `Tool "${name}" failed: ${result.error}`;
 
           this.memory.add({ role: "tool", content: observation, name });
+
+          // Report tool result progress
+          onProgress?.({
+            type: 'tool_result',
+            name,
+            result,
+            timestamp: Date.now()
+          });
 
           if (this.config.debug) {
             const icon = result.success ? "✅" : "❌";
@@ -344,25 +453,32 @@ export class Agent {
           }
         }
 
-        // 4.5 PROACTIVE REFLECTION — Sanity check after tools
-        if (this.config.reflector?.enabled) {
-          const intermediateOutput = results
-            .map((r) => `${r.name}: ${r.result.success ? "success" : "failed"}`)
-            .join(", ");
-          const reflection = await this.reflector.reflect(
-            "Intermediate Tool Check",
-            `Tools executed: ${intermediateOutput}`,
+        // Intermediate streaming reflection on tool usage
+        if (this.config.reflector?.enabled && output.tool_calls.length > 0) {
+          const toolUsageSummary = `Executed ${output.tool_calls.length} tools: ${output.tool_calls.map(tc => tc.name).join(', ')}. Results: ${results.map(r => `${r.name}:${r.result.success ? 'success' : 'failed'}`).join(', ')}`;
+
+          const intermediateReflection = await this.reflector.reflect(
+            "Tool Usage Quality Assessment",
+            toolUsageSummary,
             this.memory.getAll(),
             results.map((r) => ({ name: r.name, args: {}, result: r.result })),
           );
 
-          if (reflection.shouldRetry || reflection.score < 60) {
-            logger.warn(
-              `[Agent] Intermediate reflection caught an issue: ${reflection.feedback}`,
+          if (intermediateReflection.shouldRetry || intermediateReflection.score < 70) {
+            logger.info(
+              `[Agent] Intermediate reflection: tool usage quality ${intermediateReflection.score}/100, ${intermediateReflection.feedback}`,
             );
+
+            // Report reflection via onProgress if available
+            onProgress?.({
+              type: 'thinking',
+              content: `🔄 Reflecting on tool usage: ${intermediateReflection.feedback}`,
+              timestamp: Date.now()
+            });
+
             this.memory.add({
               role: "assistant",
-              content: `[Proactive Reflection] I noticed an issue: ${reflection.feedback}. Suggestions: ${reflection.suggestions.join(". ")}. Adjusting plan...`,
+              content: `[Tool Quality Reflection] Score: ${intermediateReflection.score}/100. ${intermediateReflection.feedback}. Suggestions: ${intermediateReflection.suggestions.join('. ')}. Adjusting approach...`,
             });
             retryCount++;
             continue;
@@ -406,17 +522,56 @@ export class Agent {
     return "⚠️ Reached maximum iterations. Please try a simpler request.";
   }
 
-  // ── Utility Methods ────────────────────────────────────────
-  getMemoryStats() {
-    return this.memory.getStats();
-  }
+  private extractFactsFromResponse(response: string): string[] {
+    // More sophisticated fact extraction
+    // Split into sentences and identify factual statements
+    const sentences = response.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 10);
 
-  clearMemory() {
-    this.memory.clear();
-  }
+    const facts: string[] = [];
 
-  getConfig() {
-    return this.config;
+    // Enhanced fact indicators with patterns
+    const factPatterns = [
+      // Declarative statements
+      /\b(is|are|was|were|has|have|had|will|can|cannot|should|must|does|did|makes|made|creates|created)\b/i,
+      // Technical terms (may indicate factual content)
+      /\b(API|function|method|class|library|framework|protocol|standard)\b/i,
+      // Measurements and quantities
+      /\b(\d+(?:\.\d+)?\s*(?:%|bytes|MB|GB|seconds|minutes|hours|days))\b/i,
+      // Proper nouns (names, places, organizations)
+      /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/,
+      // Version numbers
+      /\bv?\d+(?:\.\d+)+(?:\.\d+)*\b/,
+    ];
+
+    const nonFactIndicators = [
+      /\b(I|you|we|they|it)\s+(think|believe|feel|want|need|hope|wish)/i,
+      /\b(perhaps|maybe|possibly|might|could|would)\b/i,
+      /\b(let me|I will|I'll|you can|try to)\b/i,
+      /\b(question|ask|help|support|please|thank|sorry)\b/i,
+    ];
+
+    for (const sentence of sentences) {
+      // Skip if contains non-fact indicators
+      if (nonFactIndicators.some(pattern => pattern.test(sentence))) {
+        continue;
+      }
+
+      // Check if contains fact patterns
+      const hasFactPattern = factPatterns.some(pattern => pattern.test(sentence));
+
+      // Additional criteria: reasonable length, not starting with lowercase
+      const isReasonableLength = sentence.length > 15 && sentence.length < 250;
+      const startsWithCapital = /^[A-Z]/.test(sentence);
+
+      if (hasFactPattern && isReasonableLength && startsWithCapital) {
+        facts.push(sentence);
+      }
+    }
+
+    // Deduplicate and limit
+    const uniqueFacts = [...new Set(facts)].slice(0, 5);
+
+    return uniqueFacts;
   }
 
   // ── Vector Memory Methods ───────────────────────────────────
@@ -442,38 +597,8 @@ export class Agent {
 
   // ── Context Retrieval ───────────────────────────────────────
   private async retrieveRelevantContext(userQuery: string): Promise<Message[]> {
-    try {
-      // Search for semantically similar content in long-term memory
-      const similarResults = await this.semanticSearch(userQuery, 3);
-
-      if (similarResults.length === 0) {
-        return [];
-      }
-
-      // Convert search results to context messages
-      const contextMessages: Message[] = [];
-
-      for (const result of similarResults) {
-        if (result.score > 0.3) {
-          // Only include relevant results
-          contextMessages.push({
-            role: "system",
-            content: `[Context from memory (${Math.round(result.score * 100)}% relevance)]: ${result.entry.content}`,
-          });
-        }
-      }
-
-      if (contextMessages.length > 0) {
-        logger.debug(
-          `[Agent] Retrieved ${contextMessages.length} context messages from vector memory`,
-        );
-      }
-
-      return contextMessages;
-    } catch (error) {
-      logger.warn(`[Agent] Context retrieval failed: ${error}`);
-      return [];
-    }
+    const results = await this.memory.semanticSearch(userQuery, 10); // Increased limit for better selection
+    return results.slice(0, 3).flatMap(hit => hit.conversation.messages);
   }
 
   // Enhanced chat method with memory context

@@ -29,6 +29,16 @@ export interface HybridMemoryResult {
   metadata?: Record<string, unknown>;
 }
 
+export interface MemoryStatus {
+  workspaceDir: string;
+  memoryDir: string;
+  files: number;
+  conversations: number;
+  vectorEntries: number;
+  vectorConversations: number;
+  semanticAvailable: boolean;
+}
+
 interface StoredConversationRecord {
   messages?: Array<{ content?: string }>;
   metadata?: {
@@ -380,6 +390,23 @@ export class MemoryManager {
       logger.warn(`[Memory] Async semantic hybrid retrieval unavailable: ${error}`);
       return syncResults;
     }
+  }
+
+  getStatus(): MemoryStatus {
+    const files = this.listMemoryFiles().length;
+    const conversationsDir = path.join(this.workspacePath, "conversations");
+    const conversations = fs.existsSync(conversationsDir)
+      ? fs.readdirSync(conversationsDir).filter((file) => file.endsWith(".json")).length
+      : 0;
+    return {
+      workspaceDir: this.workspacePath,
+      memoryDir: this.memoryPath,
+      files,
+      conversations,
+      vectorEntries: 0,
+      vectorConversations: 0,
+      semanticAvailable: conversations > 0,
+    };
   }
 
   private normalizeSemanticHit(entry: ConversationSemanticHit, index: number): HybridMemoryResult {

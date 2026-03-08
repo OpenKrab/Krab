@@ -3,6 +3,8 @@
  * Provides HEX colors and gradient utilities using truecolor ANSI sequences.
  */
 
+import pc from "picocolors";
+
 // -----------------
 // 🎨 COLOR PALETTE
 // -----------------
@@ -45,15 +47,18 @@ function hexToRgb(hex: string): [number, number, number] {
     : [255, 255, 255]; // default white
 }
 
-function applyHexColor(
-  text: string,
-  hex: string,
-  bold: boolean = false,
-): string {
-  const [r, g, b] = hexToRgb(hex);
-  const boldCode = bold ? "\x1b[1m" : "";
-  const resetCode = bold ? "\x1b[22m\x1b[39m" : "\x1b[39m";
-  return `${boldCode}\x1b[38;2;${r};${g};${b}m${text}${resetCode}`;
+export function applyHexColor(text: string, hex: string, bold: boolean = false): string {
+  // Fallback to basic color application since advanced ANSI methods may not be supported
+  const color = hex.toLowerCase() === COLORS.primary.toLowerCase() ? pc.green :
+                hex.toLowerCase() === COLORS.secondary.toLowerCase() ? pc.cyan :
+                hex.toLowerCase() === COLORS.warning.toLowerCase() ? pc.yellow :
+                hex.toLowerCase() === COLORS.panel.toLowerCase() ? pc.gray :
+                hex.toLowerCase() === COLORS.accent.toLowerCase() ? pc.magenta :
+                hex.toLowerCase() === COLORS.success.toLowerCase() ? pc.green :
+                hex.toLowerCase() === COLORS.info.toLowerCase() ? pc.blue :
+                hex.toLowerCase() === COLORS.warning.toLowerCase() ? pc.yellow :
+                hex.toLowerCase() === COLORS.error.toLowerCase() ? pc.red : pc.white;
+  return bold ? pc.bold(color(text)) : color(text);
 }
 
 /**

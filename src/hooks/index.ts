@@ -8,6 +8,8 @@ import * as path from "path";
 import * as os from "os";
 import { createRequire } from "module";
 import { fileURLToPath } from "url";
+import yaml from "js-yaml";
+import { sessionMemoryHandler } from "./bundled/session-memory.js";
 
 const require = createRequire(import.meta.url);
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -68,6 +70,7 @@ export class HooksManager {
 
   constructor() {
     this.discoverHooks();
+    this.registerBuiltInHooks();
   }
 
   private discoverHooks(): void {
@@ -98,8 +101,12 @@ export class HooksManager {
       const metadata = this.parseHookMetadata(content);
 
       // Load handler
-      const handlerModule = require(handlerPath);
-      const handler: HookHandler = handlerModule[metadata.metadata.openclaw.export || "default"];
+      const exportName = metadata.metadata.openclaw.export || "default";
+      const handlerModule = require(handlerPath) as Record<string, unknown>;
+      const handler = handlerModule[exportName] as HookHandler | undefined;
+      if (!handler || typeof handler.execute !== "function") {
+        throw new Error(`Hook export '${exportName}' is missing or invalid`);
+      }
 
       const hook: HookDefinition = {
         metadata,
@@ -117,38 +124,44 @@ export class HooksManager {
   }
 
   private parseHookMetadata(content: string): HookMetadata {
-    // Simple frontmatter parser (YAML)
     const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
     if (!frontmatterMatch) {
       throw new Error("Invalid HOOK.md format: missing frontmatter");
     }
 
     const yamlContent = frontmatterMatch[1];
-    // Basic YAML parsing (in production, use a proper YAML parser)
-    const metadata: any = {};
-    const lines = yamlContent.split("\n");
-
-    for (const line of lines) {
-      const [key, ...valueParts] = line.split(":");
-      if (key && valueParts.length > 0) {
-        const value = valueParts.join(":").trim();
-        this.setNestedProperty(metadata, key.trim(), value);
-      }
-    }
-
-    return HookMetadataSchema.parse(metadata);
+    const parsed = yaml.load(yamlContent);
+    return HookMetadataSchema.parse(parsed);
   }
 
-  private setNestedProperty(obj: any, path: string, value: any): void {
-    const keys = path.split(".");
-    let current = obj;
+  private registerBuiltInHooks(): void {
+    const builtIns = [
+      {
+        hookDir: path.join(moduleDir, "bundled", "session-memory"),
+        metadataFile: path.join(moduleDir, "bundled", "session-memory", "HOOK.md"),
+        handler: sessionMemoryHandler,
+      },
+    ];
 
-    for (let i = 0; i < keys.length - 1; i++) {
-      if (!current[keys[i]]) current[keys[i]] = {};
-      current = current[keys[i]];
+    for (const builtIn of builtIns) {
+      if (this.hooks.has("session-memory")) {
+        continue;
+      }
+      if (!fs.existsSync(builtIn.metadataFile)) {
+        continue;
+      }
+      try {
+        const metadata = this.parseHookMetadata(fs.readFileSync(builtIn.metadataFile, "utf8"));
+        this.hooks.set(metadata.name, {
+          metadata,
+          handler: builtIn.handler,
+          path: builtIn.hookDir,
+          enabled: this.isHookEligible(metadata),
+        });
+      } catch (error) {
+        logger.error(`[Hooks] Failed to register built-in hook at ${builtIn.hookDir}:`, error);
+      }
     }
-
-    current[keys[keys.length - 1]] = value;
   }
 
   private isHookEligible(metadata: HookMetadata): boolean {

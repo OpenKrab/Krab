@@ -4,6 +4,7 @@
 import { Command } from "commander";
 import pc from "picocolors";
 import { presenceTracker } from "../presence/tracker.js";
+import { printBanner, printInfo, printKeyValue, printSection, printWarning } from "../tui/style.js";
 
 // ── Presence Commands ───────────────────────────────────────
 const presenceCmd = new Command("presence")
@@ -40,14 +41,21 @@ presenceCmd
 
 async function showPresence(): Promise<void> {
   const entries = presenceTracker.getActivePresence();
+  const stats = presenceTracker.getStats();
 
-  console.log(pc.bold("Active Presence"));
+  printBanner("Presence Control Surface");
+  printSection("Presence Overview");
+  printKeyValue("Active Entries", String(stats.active));
+  printKeyValue("Total Entries", String(stats.total));
+  printKeyValue("Modes", Object.keys(stats.byMode).length ? Object.keys(stats.byMode).join(", ") : "none");
   console.log("");
 
   if (entries.length === 0) {
-    console.log(pc.dim("No active presence entries found."));
+    printWarning("No active presence entries found.");
     return;
   }
+
+  printSection("Active Instances");
 
   for (const entry of entries) {
     console.log(`${pc.cyan(entry.instanceId || "unknown")}`);
@@ -73,14 +81,14 @@ async function showPresence(): Promise<void> {
 async function showPresenceStats(): Promise<void> {
   const stats = presenceTracker.getStats();
 
-  console.log(pc.bold("Presence Statistics"));
-  console.log("");
-  console.log(`Total Entries: ${stats.total}`);
-  console.log(`Active Entries: ${stats.active}`);
+  printBanner("Presence Control Surface");
+  printSection("Presence Statistics");
+  printKeyValue("Total Entries", String(stats.total));
+  printKeyValue("Active Entries", String(stats.active));
   console.log("");
 
   if (Object.keys(stats.byMode).length > 0) {
-    console.log(pc.bold("By Mode:"));
+    printInfo("By mode:");
     for (const [mode, count] of Object.entries(stats.byMode)) {
       console.log(`  ${mode}: ${count}`);
     }
@@ -88,7 +96,7 @@ async function showPresenceStats(): Promise<void> {
   }
 
   if (Object.keys(stats.byReason).length > 0) {
-    console.log(pc.bold("By Reason:"));
+    printInfo("By reason:");
     for (const [reason, count] of Object.entries(stats.byReason)) {
       console.log(`  ${reason}: ${count}`);
     }
@@ -102,10 +110,12 @@ async function updatePresence(options: { mode?: string; reason?: string }): Prom
       reason: (options.reason as any) || "beacon"
     });
 
-    console.log(pc.green("✅ Presence updated"));
-    console.log(`Instance ID: ${entry.instanceId}`);
-    console.log(`Mode: ${entry.mode}`);
-    console.log(`Reason: ${entry.reason}`);
+    printBanner("Presence Control Surface");
+    printSection("Presence Updated");
+    printKeyValue("Instance ID", entry.instanceId || "unknown");
+    printKeyValue("Mode", entry.mode);
+    printKeyValue("Reason", entry.reason);
+    console.log("");
 
   } catch (error) {
     console.error(pc.red("❌ Failed to update presence:"), error);

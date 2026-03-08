@@ -87,48 +87,32 @@ export const modelsCommand = new Command("models")
       .option("--json", "Output JSON")
       .option("--plain", "Plain output")
       .option("--check", "Exit non-zero if auth is expiring/expired")
-      .action((options) => {
+      .action(async (options) => {
         try {
           const config = loadConfig();
-          
-          if (options.json) {
-            console.log(JSON.stringify({
-              provider: config.provider?.name || "unknown",
-              model: config.provider?.model || "not set",
-              hasApiKey: !!config.provider?.apiKey,
-              baseURL: config.provider?.baseURL || null,
-              fallbacks: fallbacksStore,
-              aliases: Array.from(aliasesStore.values()),
-              imageFallbacks: imageFallbacksStore
-            }, null, 2));
-            return;
+          const provider = config.provider;
+          const hasApiKey = !!provider.apiKey;
+
+          console.log(pc.bold(pc.cyan("=== Models Configuration Status ===\n")));
+          printSection("Provider Readout");
+          printKeyValue("Provider", provider.name);
+          printKeyValue("Model", provider.model);
+          printKeyValue("API Key", hasApiKey ? pc.green("Set (hidden for security)") : pc.red("Not Set"));
+          if (provider.baseURL) {
+            printKeyValue("Base URL", pc.yellow(provider.baseURL));
+          }
+          printKeyValue("Fallbacks", fallbacksStore.length ? pc.yellow(fallbacksStore.map(fb => fb.model).join(", ")) : pc.gray("None configured"));
+          console.log("");
+
+          if (!hasApiKey) {
+            printWarning("API key is not set for the selected provider.");
+            printInfo("Set the appropriate environment variable (e.g., OPENAI_API_KEY, GEMINI_API_KEY) in your .env file.");
+          } else {
+            printInfo("API key is set for the selected provider.");
           }
 
-          printBanner("Model Status Array");
-          printSection("Provider Readout");
-          printKeyValue("Provider", config.provider?.name || "not set");
-          printKeyValue("Model", config.provider?.model || "not set");
-          printKeyValue("API Key", config.provider?.apiKey ? "Set" : "Not set");
-          
-          if (config.provider?.baseURL) {
-            printKeyValue("Base URL", config.provider.baseURL);
-          }
-          
-          if (fallbacksStore.length > 0) {
-            printSection("Fallback Lattice");
-            for (const fb of fallbacksStore) {
-              console.log("  " + pc.cyan(fb.model) + pc.dim(" (priority: " + fb.priority + ")"));
-            }
-          }
-          
-          if (aliasesStore.size > 0) {
-            printSection("Alias Matrix");
-            for (const [alias, entry] of aliasesStore) {
-              console.log("  " + pc.yellow(alias) + " -> " + pc.cyan(entry.model));
-            }
-          }
-          
-          console.log();
+          printInfo("\nRun 'krab models list' to see available models.");
+          printInfo("Run 'krab models set <model>' to change the default model.");
         } catch (err: any) {
           console.error(pc.red("Error: " + err.message));
           process.exit(1);

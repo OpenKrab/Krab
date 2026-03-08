@@ -31,204 +31,167 @@
 
 ## 📊 **Framework Architecture**
 
-```
-┌─────────────────┐
-│   User Input    │
-└─────────────────┘
-         │
-         ▼
-┌─────────────────┐
-│  CLI Interface  │
-└─────────────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Multi-Agent     │
-│     Router      │
-└─────────────────┘
-    │    │    │
-    ▼    ▼    ▼
-┌─────┐ ┌─────┐ ┌─────┐
-│Session│ │Message│ │Presence│
-│Manager│ │Queue │ │Tracker │
-└─────┘ └─────┘ └─────┘
-    │    │    │
-    └────┼────┘
-         ▼
-┌─────────────────┐
-│  AGI Agent Core │
-└─────────────────┘
-    │    │    │    │
-    ▼    ▼    ▼    ▼
-┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐
-│Memory│ │Tools │ │OAuth │ │Retry │
-│System│ │Registry│ │Manager│ │System│
-└─────┘ └─────┘ └─────┘ └─────┘
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Tool Categories                          │
-├─────────────────┬─────────────────┬─────────────────┬─────┤
-│ 🎨 Creative AI  │ 🖥️ Automation   │ 🤝 Collaboration │ 📊 │
-│ • Image Gen     │ • Desktop Ctrl  │ • Multi-Agent    │ Ent │
-│ • Voice Intel   │ • Web Auto      │ • MCP Integration│     │
-│                 │ • Code Exec     │ • Scheduling     │     │
-└─────────────────┴─────────────────┴─────────────────┴─────┘
-         │
-         ▼
-┌─────────────────────────────────────────────────────────────┐
-│                AI Providers (with OAuth)                    │
-├─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┤
-│Gemini│OpenAI│Anthropic│Local│Google│Claude│GPT-4│DeepSeek│Azure│
-│2.0   │GPT-4 │Claude   │Models│Gemini│Code  │Turbo │Coder   │OpenAI│
-└─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
-         │
-         ▼
-┌─────────────────┐
-│  AGI Response   │
-└─────────────────┘
-         │
-         ▼
-┌─────────────────┐
-│   User Output   │
-└─────────────────┘
+```mermaid
+flowchart TD
+    input[User Input] --> interface[CLI / TUI / API]
+    interface --> router[Multi-Agent Router]
+
+    subgraph runtime[Runtime Coordination]
+        direction LR
+        session[Session Management]
+        queue[Message Queue]
+        presence[Presence Tracking]
+    end
+
+    router --> session
+    router --> queue
+    router --> presence
+
+    session --> core
+    queue --> core
+    presence --> core
+
+    subgraph core_services[Agent Core Services]
+        direction LR
+        core[AGI Agent Core]
+        memory[Memory System]
+        registry[Tool Registry]
+        oauth[OAuth Manager]
+        retry[Retry System]
+    end
+
+    core --> memory
+    core --> registry
+    core --> oauth
+    core --> retry
+
+    registry --> tools
+
+    subgraph tools[Tool Categories]
+        direction LR
+        creative[Creative AI]
+        automation[Automation]
+        collaboration[Collaboration]
+        ops[Ops / Security / Analytics]
+    end
+
+    core --> providers
+    oauth --> providers
+    retry --> providers
+    tools --> providers
+
+    subgraph providers[AI Providers + OAuth Layer]
+        direction LR
+        gemini[Gemini]
+        openai[OpenAI]
+        anthropic[Anthropic]
+        openrouter[OpenRouter]
+        local[Local Models]
+        others[DeepSeek / Azure / Google / Others]
+    end
+
+    providers --> response[AGI Response]
+    response --> output[User Output]
 ```
 
 ## 🔄 **Agent Workflow**
 
-```
-┌─────────────┐
-│   START     │
-└─────────────┘
-       │
-       ▼
-┌─────────────┐
-│ User Input  │
-└─────────────┘
-       │
-       ▼
-┌─────────────┐
-│ 🧠 Think:   │
-│ Generate    │
-│    Plan     │
-└─────────────┘
-       │
-       ▼
-┌─────────────┐
-│ Use Tools?  │
-└─────────────┘
-   │         │
-   │ YES     │ NO
-   ▼         ▼
-┌─────────────┐ ┌─────────────┐
-│ ⚡ Execute  │ │ 💬 Generate │
-│    Tools    │ │  Response   │
-└─────────────┘ └─────────────┘
-       │               │
-       ▼               │
-┌─────────────┐       │
-│  Success?   │       │
-└─────────────┘       │
-   │         │       │
-   │ YES     │ NO    │
-   ▼         ▼       │
-┌─────────────┐ ┌─────────────┐ │
-│ 🔍 Reflect  │ │ 🔄 Retry    │ │
-│   Results   │ │  Different  │ │
-└─────────────┘ │ Approach    │ │
-       │       └─────────────┘ │
-       ▼               │       │
-┌─────────────┐       ▼       │
-│ Quality OK? │ ┌─────────────┐ │
-└─────────────┘ │ Max Retries?│ │
-   │         │ └─────────────┘ │
-   │ YES     │ NO      │       │
-   ▼         ▼         ▼       │
-┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-│ 💬 Generate │ │ 📈 Improve  │ │ ❌ Report   │
-│  Response   │ │  Response   │ │   Error     │
-└─────────────┘ └─────────────┘ └─────────────┘
-       │               │               │
-       └───────────────┼───────────────┘
-                       ▼
-             ┌─────────────────┐
-             │ 📤 Output       │
-             │   Response      │
-             └─────────────────┘
-                       │
-                       ▼
-                 ┌─────────────┐
-                 │     END     │
-                 └─────────────┘
+```mermaid
+flowchart TD
+    start([Start]) --> input[User Input]
+    input --> plan[Generate Plan]
+    plan --> decision{Plan Uses Tools?}
+
+    decision -- No --> respond[Generate Response]
+
+    decision -- Yes --> execute[Execute Tools]
+    execute --> success{Execution Successful?}
+
+    success -- Yes --> reflect[Reflect on Results]
+    success -- No --> retry[Retry with Different Approach]
+    retry --> limit{Max Retries Reached?}
+    limit -- No --> execute
+    limit -- Yes --> error[Report Error]
+
+    reflect --> quality{Quality Acceptable?}
+    quality -- Yes --> respond
+    quality -- No --> improve[Improve Response]
+
+    respond --> output[Output Response]
+    improve --> output
+    error --> output
+    output --> finish([End])
 ```
 
 ## 🏗️ **System Architecture**
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                           User Interface                            │
-├─────────────────────┬─────────────────────┬─────────────────────┤
-│        CLI          │      Web UI         │   Desktop App       │
-│ • Command Line      │ • Real-time Chat    │ • Electron Client    │
-│ • Interactive Mode  │ • Collaborative     │ • Native Experience  │
-│ • Advanced Options  │ • Web Dashboard     │ • Cross-platform     │
-└─────────────────────┴─────────────────────┴─────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                            Core Engine                              │
-├─────────────────────┬─────────────────────┬─────────────────────┤
-│     AGI Agent       │  Memory System      │  Tool Registry       │
-│ • Reasoning Engine  │ • Markdown Storage  │ • 70+ Tools          │
-│ • Multi-Agent       │ • Vector Search     │ • Approval Workflows  │
-│ • Session Mgmt      │ • Context Injection │ • Plugin System      │
-└─────────────────────┴─────────────────────┴─────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                           AI Providers                              │
-├─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┤
-│Gemini│OpenAI│Anthropic│Local│Google│Claude│GPT-4│DeepSeek│Azure│Other│
-│2.0   │GPT-4 │Claude   │Models│Gemini│Code  │Turbo │Coder   │OpenAI│Providers│
-└─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
-                                  ▲
-                                  │
-┌─────────────────────────────────────────────────────────────────────┐
-│                         Feature Modules                             │
-├─────────────────┬─────────────────┬─────────────────┬─────────────┤
-│ 🎨 Creative AI  │ 🖥️ Automation   │ 🤝 Collaboration │ 📊 Enterprise│
-│ • Image Gen     │ • Desktop Ctrl  │ • Multi-Agent    │ • Analytics  │
-│ • Voice Proc    │ • Web Scraping  │ • MCP Protocol   │ • Security   │
-│ • Media Tools   │ • Code Exec     │ • Task Sched     │ • Cloud Deploy│
-└─────────────────┴─────────────────┴─────────────────┴─────────────┘
+```mermaid
+flowchart TD
+    subgraph ui[User Interface]
+        direction LR
+        cli[CLI]
+        web[Web UI]
+        desktop[Desktop App]
+    end
+
+    subgraph core[Core Engine]
+        direction LR
+        agent[AGI Agent]
+        memory[Memory System]
+        tools[Tool Registry]
+    end
+
+    subgraph modules[Feature Modules]
+        direction LR
+        creative[Creative AI]
+        automation[Automation]
+        collaboration[Collaboration]
+        enterprise[Enterprise Services]
+    end
+
+    subgraph providers[AI Providers]
+        direction LR
+        gemini[Gemini]
+        openai[OpenAI]
+        anthropic[Anthropic]
+        local[Local Models]
+        google[Google]
+        azure[Azure]
+        other[Other Providers]
+    end
+
+    ui --> core
+    modules --> core
+    core --> providers
 ```
 
 ## 🎯 **Tool Execution Flow**
 
-```
-┌──────┐          ┌──────┐          ┌──────┐          ┌──────┐          ┌──────┐
-│ User │          │Agent │          │Memory│          │ LLM  │          │Tools │
-└──────┘          └──────┘          └──────┘          └──────┘          └──────┘
-   │                   │                   │                   │                   │
-   │─── User Input ──►│                   │                   │                   │
-   │                   │─── Load Context ─►│                   │                   │
-   │                   │                   │◄─── Context ──────│                   │
-   │                   │─── Generate Plan ─►│                   │                   │
-   │                   │                   │◄─── Plan ─────────│                   │
-   │                   │                   │                   │                   │
-   │                   │            [Plan Uses Tools?]         │                   │
-   │                   │                   │                   │                   │
-   │                   │─── Execute Tool(s) ──────────────────►│                   │
-   │                   │                   │                   │                   │
-   │                   │◄─── Tool Results ─────────────────────│                   │
-   │                   │─── Process Results ─►│                   │
-   │                   │                   │◄─── Processed ────│                   │
-   │                   │                   │                   │                   │
-   │                   │◄─── Generate Response ────────────────│                   │
-   │                   │─── Store Conversation ───────────────►│                   │
-   │                   │                   │                   │                   │
-   │◄─── Final Response ◄─────────────────────│                   │
-   │                   │                   │                   │                   │
+```mermaid
+sequenceDiagram
+    participant User
+    participant Agent
+    participant Memory
+    participant LLM
+    participant Tools
+
+    User->>Agent: User Input
+    Agent->>Memory: Load Context
+    Memory-->>Agent: Context
+    Agent->>LLM: Generate Plan
+    LLM-->>Agent: Plan
+
+    alt Plan uses tools
+        Agent->>Tools: Execute Tool(s)
+        Tools-->>Agent: Tool Results
+        Agent->>Memory: Process / Store Results
+        Memory-->>Agent: Processed Context
+    end
+
+    Agent->>LLM: Generate Response
+    LLM-->>Agent: Response
+    Agent->>Memory: Store Conversation
+    Agent-->>User: Final Response
 ```
 
 ## 🎯 **OpenClaw-Inspired Features**
@@ -337,7 +300,26 @@ krab plugins list
 
 ---
 
-## 🚀 Quick Start
+## � **Release Checklist**
+
+- [ ] Ensure all tests pass with `npm test`
+- [ ] Update `CHANGELOG.md` with changes since the last release
+- [ ] Verify documentation in `README.md` is up-to-date
+- [ ] Tag the release with `git tag vX.Y.Z`
+- [ ] Push tags to GitHub with `git push origin vX.Y.Z`
+- [ ] Publish to npm if applicable with `npm publish`
+- [ ] Create a GitHub release with detailed notes
+
+## ⚖️ **Parity Status vs OpenClaw**
+
+- **Core Architecture**: High parity, with similar multi-agent routing and session management
+- **Runtime Resilience/Governance**: High parity, with cancellation propagation and tool policy hooks
+- **Operator Tooling**: Medium to high parity, with improved TUI dashboard and CLI diagnostics
+- **End-to-End Product Polish**: Not yet fully parity, with gaps in message/runtime cohesion and workflow maturity
+
+For detailed comparison, see the [Parity Tracker](https://github.com/OpenKrab/Krab/issues) on GitHub.
+
+## � Quick Start
 
 ### ⭐ **Star the Repository!**
 
@@ -439,7 +421,7 @@ npm start ask "Take a screenshot and save it to desktop"
 
 - `krab session list` - List all active sessions
 - `krab session info <id>` - Get detailed session information
-- `krab session clean` - Clean up stale sessions
+- `krab session cleanup` - Analyze or clean up stale sessions
 - `krab session remove <id>` - Remove a specific session
 - `krab session stats` - Show session statistics
 
@@ -458,6 +440,12 @@ npm start ask "Take a screenshot and save it to desktop"
 - `krab presence stats` - Show presence statistics
 - `krab presence update` - Update current instance presence
 
+### Memory Operations
+
+- `krab memory status` - Show memory workspace and hybrid retrieval status
+- `krab memory search <query>` - Search hybrid memory sources
+- `krab memory files` - List indexed memory files
+
 ### Advanced Commands
 
 - `krab gateway` - Start web API server
@@ -469,6 +457,24 @@ npm start ask "Take a screenshot and save it to desktop"
 - `krab hooks list` - List all active hooks
 - `krab memory search <query>` - Search memory system
 - `krab secrets list|set|get|remove` - Manage state-aware secrets in the active Krab profile
+
+## ⚖️ Non-Dashboard Parity Report
+
+Krab is being aligned toward OpenClaw parity in the core operator path without expanding into the full OpenClaw app and extension ecosystem.
+
+### Current parity status
+
+- **Provider/runtime polish**: strong parity in deterministic provider detection, CLI diagnostics, and fallback visibility.
+- **Gateway/runtime contracts**: improved parity with shared runtime snapshot data for gateway, sessions, presence, and queue state.
+- **Operator CLI surfaces**: improved parity for `models`, `gateway`, `doctor`, `session`, `presence`, and `memory` workflows.
+- **Memory retrieval**: partial parity with hybrid file + conversation + semantic retrieval, but not yet at OpenClaw's indexing depth.
+- **Docs/workflows**: improving, but still lighter than OpenClaw's dedicated docs platform and runbook coverage.
+
+### Still intentionally out of scope in this parity pass
+
+- Dashboard-specific parity work
+- Full OpenClaw extension ecosystem parity
+- Native/mobile/web product-surface parity
 
 ### In-Chat Commands
 

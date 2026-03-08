@@ -90,12 +90,43 @@ function resolveFirstSecret(envKeys: string[]): string | undefined {
 
 function detectProvider(): ProviderConfig {
   const defaultModelEnv = process.env.KRAB_DEFAULT_MODEL || "";
+  const explicitProvider = process.env.KRAB_PROVIDER || "";
+
+  // Priority order for provider detection
+  const providerPriority = [
+    "openai",
+    "anthropic",
+    "google",
+    "openrouter",
+    "deepseek",
+    "ollama",
+    "kilocode",
+    "opencode"
+  ];
+
+  // 0. Explicit provider override via KRAB_PROVIDER
+  if (explicitProvider && PROVIDER_METADATA[explicitProvider]) {
+    const meta = PROVIDER_METADATA[explicitProvider];
+    const apiKey = resolveFirstSecret(meta.env);
+    if (apiKey) {
+      console.log(`Provider explicitly set to '${explicitProvider}' via KRAB_PROVIDER`);
+      return {
+        name: explicitProvider as any,
+        model: defaultModelEnv && !defaultModelEnv.includes("/") ? defaultModelEnv : meta.defaultModel,
+        apiKey,
+        baseURL: meta.baseURL,
+      };
+    } else {
+      console.warn(`Explicit provider '${explicitProvider}' set via KRAB_PROVIDER, but no API key found. Falling back to detection.`);
+    }
+  }
 
   // 1. Explicit routing by prefix (e.g., "kilocode/...")
   for (const [name, meta] of Object.entries(PROVIDER_METADATA)) {
     if (defaultModelEnv.startsWith(`${name}/`)) {
       const apiKey = resolveFirstSecret(meta.env);
       if (apiKey) {
+        console.log(`Provider '${name}' selected based on model prefix in KRAB_DEFAULT_MODEL`);
         return {
           name: name as any,
           model: defaultModelEnv.replace(`${name}/`, ""),
@@ -110,6 +141,7 @@ function detectProvider(): ProviderConfig {
   if (defaultModelEnv.startsWith("gemini/")) {
     const apiKey = resolveFirstSecret(["GEMINI_API_KEY", "GOOGLE_API_KEY"]);
     if (apiKey) {
+      console.log("Provider 'google' selected based on 'gemini/' prefix in KRAB_DEFAULT_MODEL");
       return {
         name: "google",
         model: defaultModelEnv.replace("gemini/", ""),
@@ -120,6 +152,7 @@ function detectProvider(): ProviderConfig {
   if (defaultModelEnv.startsWith("claude/")) {
     const apiKey = resolveFirstSecret(["ANTHROPIC_API_KEY"]);
     if (apiKey) {
+      console.log("Provider 'anthropic' selected based on 'claude/' prefix in KRAB_DEFAULT_MODEL");
       return {
         name: "anthropic",
         model: defaultModelEnv.replace("claude/", ""),
@@ -128,8 +161,10 @@ function detectProvider(): ProviderConfig {
     }
   }
 
-  // Auto-detection by ENV existence
-  for (const [name, meta] of Object.entries(PROVIDER_METADATA)) {
+  // 3. Auto-detection by ENV existence, respecting priority order
+  for (const name of providerPriority) {
+    const meta = PROVIDER_METADATA[name];
+    if (!meta) continue;
     const apiKey = resolveFirstSecret(meta.env);
     if (!apiKey) continue;
 
@@ -139,6 +174,7 @@ function detectProvider(): ProviderConfig {
       model = defaultModelEnv;
     }
 
+    console.log(`Provider '${name}' selected based on API key availability and priority order`);
     return {
       name: name as any,
       model,
@@ -148,7 +184,7 @@ function detectProvider(): ProviderConfig {
   }
 
   throw new Error(
-    "No valid LLM provider found. Please set GEMINI_API_KEY or KILOCODE_API_KEY etc. in .env",
+    "No valid LLM provider found. Please set GEMINI_API_KEY or KILOCODE_API_KEY etc. in .env"
   );
 }
 

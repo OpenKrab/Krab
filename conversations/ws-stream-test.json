@@ -1,0 +1,14 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "hello"
+    }
+  ],
+  "metadata": {
+    "id": "ws-stream-test",
+    "createdAt": "2026-03-08T08:01:59.796Z",
+    "updatedAt": "2026-03-08T08:01:59.799Z",
+    "messageCount": 1
+  }
+}

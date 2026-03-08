@@ -54,8 +54,15 @@ async function askApproval(
 async function executeSingle(
   name: string,
   args: Record<string, unknown>,
-  context?: { agentId?: string },
+  context?: { agentId?: string; signal?: AbortSignal },
 ): Promise<ToolResult> {
+  const signal = context?.signal;
+
+  // Check if already aborted
+  if (signal?.aborted) {
+    return { success: false, output: "", error: "Tool execution aborted" };
+  }
+
   const tool = registry.get(name);
   if (!tool) {
     return { success: false, output: "", error: `Tool "${name}" not found` };
@@ -106,8 +113,12 @@ async function executeSingle(
     return { success: false, output: "", error: policy.reason || `Tool '${name}' denied by policy` };
   }
 
-  // Approval check for side-effect tools
+  // Approval check for side-effect tools (with abort check)
   if (policy.requiresApproval) {
+    if (signal?.aborted) {
+      return { success: false, output: "", error: "Tool execution aborted during approval" };
+    }
+
     const approved = await askApproval(name, args);
     recordToolExecutionDiagnostic({
       timestamp: new Date().toISOString(),
@@ -127,18 +138,33 @@ async function executeSingle(
   try {
     logger.debug(`[Executor] Running tool: ${name}`);
     const startedAt = Date.now();
-    const rawResult = await tool.execute(parsed.data);
-    const result = guardToolResult(tool, rawResult);
-    recordToolExecutionDiagnostic({
-      timestamp: new Date().toISOString(),
-      toolName: name,
-      success: result.success,
-      durationMs: Date.now() - startedAt,
-      sideEffect: classifyToolMutation(tool) !== "read",
-      error: result.error,
-      phase: "execution",
-    });
-    return result;
+
+    // Check abort before executing
+    if (signal?.aborted) {
+      return { success: false, output: "", error: "Tool execution aborted" };
+    }
+
+    // Create AbortController for tool execution if tool supports it
+    const toolController = new AbortController();
+    const abortHandler = () => toolController.abort();
+    signal?.addEventListener('abort', abortHandler);
+
+    try {
+      const rawResult = await tool.execute(parsed.data);
+      const result = guardToolResult(tool, rawResult);
+      recordToolExecutionDiagnostic({
+        timestamp: new Date().toISOString(),
+        toolName: name,
+        success: result.success,
+        durationMs: Date.now() - startedAt,
+        sideEffect: classifyToolMutation(tool) !== "read",
+        error: result.error,
+        phase: "execution",
+      });
+      return result;
+    } finally {
+      signal?.removeEventListener('abort', abortHandler);
+    }
   } catch (err: any) {
     logger.error(`[Executor] Tool "${name}" failed: ${err.message}`);
     recordToolExecutionDiagnostic({
@@ -157,8 +183,9 @@ async function executeSingle(
 // ── Execute tool calls (hybrid strategy) ───────────────────
 export async function executeToolCalls(
   toolCalls: { name: string; args: Record<string, unknown> }[],
-  context?: { agentId?: string },
+  context?: { agentId?: string; signal?: AbortSignal },
 ): Promise<{ name: string; result: ToolResult }[]> {
+  const signal = context?.signal;
   const results: { name: string; result: ToolResult }[] = [];
 
   const seenCallKeys = new Set<string>();
@@ -183,22 +210,42 @@ export async function executeToolCalls(
     return !tool || tool.sideEffect;
   });
 
-  // Execute read-only tools in parallel
+  // Execute read-only tools in parallel (with abort support)
   if (readOnly.length > 0) {
     logger.debug(
       `[Executor] Running ${readOnly.length} read-only tool(s) in parallel`,
     );
-    const parallelResults = await Promise.all(
-      readOnly.map(async (tc) => ({
+
+    // Check abort before starting parallel execution
+    if (signal?.aborted) {
+      const abortedResults = readOnly.map(tc => ({
         name: tc.name,
-        result: await executeSingle(tc.name, tc.args, context),
-      })),
-    );
-    results.push(...parallelResults);
+        result: { success: false, output: "", error: "Tool execution aborted" } as ToolResult
+      }));
+      results.push(...abortedResults);
+    } else {
+      const parallelResults = await Promise.all(
+        readOnly.map(async (tc) => ({
+          name: tc.name,
+          result: await executeSingle(tc.name, tc.args, context),
+        })),
+      );
+      results.push(...parallelResults);
+    }
   }
 
-  // Execute mutating tools sequentially
+  // Execute mutating tools sequentially (with abort support)
   for (const tc of mutating) {
+    // Check abort before each sequential tool
+    if (signal?.aborted) {
+      results.push({
+        name: tc.name,
+        result: { success: false, output: "", error: "Tool execution aborted" }
+      });
+      logger.warn(`[Executor] Skipping sequential tool ${tc.name} due to abort`);
+      break;
+    }
+
     logger.debug(`[Executor] Running mutating tool: ${tc.name} (sequential)`);
     const result = await executeSingle(tc.name, tc.args, context);
     results.push({ name: tc.name, result });

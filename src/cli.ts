@@ -38,7 +38,6 @@ import { bannerCommand } from "./cli/banner-commands.js";
 import { taglinesCommand } from "./cli/taglines-commands.js";
 import { doctorCommand } from "./cli/doctor.js";
 import { securityCommand } from "./cli/security.js";
-import { sessionCommand } from "./cli/session.js";
 import { agentCommand } from "./cli/agent.js";
 import { browserCommand } from "./cli/browser.js";
 import { updateCommand } from "./cli/update.js";
@@ -55,6 +54,7 @@ import { voicecallCommand } from "./cli/voicecall.js";
 import { nodesCommand } from "./cli/nodes.js";
 import { pluginsCommand } from "./cli/plugins.js";
 import { execApprovalsCommand } from "./cli/exec-approvals.js";
+import { memoryCommand } from "./cli/memory.js";
 
 // ── Register Built-in Tools ────────────────────────────────
 import { datetimeTool } from "./tools/built-in/datetime.js";
@@ -110,6 +110,11 @@ import { memoryTools } from "./tools/built-in/memory-tools.js";
 for (const tool of memoryTools) {
   registry.register(tool);
 }
+
+// ── Register ACP Tools ───────────────────────────────────
+import { acpSpawnTool } from "./tools/built-in/acp-tools.js";
+
+registry.register(acpSpawnTool);
 
 // ── Register Web Tools ───────────────────────────────────
 import { webTools } from "./tools/web/index.js";
@@ -286,6 +291,7 @@ program.addCommand(bootstrapCmd);
 program.addCommand(sessionCmd);
 program.addCommand(agentCmd);
 program.addCommand(presenceCmd);
+program.addCommand(memoryCommand);
 program.addCommand(obsidianCommand);
 
 // ── Handle Special Commands ────────────────────────────────
