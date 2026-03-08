@@ -13,6 +13,7 @@ export interface WebFetchOptions {
   extractMode?: "markdown" | "text" | "html";
   maxChars?: number;
   timeout?: number;
+  signal?: AbortSignal;
   headers?: Record<string, string>;
   userAgent?: string;
   followRedirects?: boolean;
@@ -152,6 +153,17 @@ export class WebFetcher {
       req.on('error', (error) => {
         reject(error);
       });
+
+      if (options.signal) {
+        const abortHandler = () => {
+          req.destroy(new Error('Request aborted'));
+        };
+        if (options.signal.aborted) {
+          abortHandler();
+          return;
+        }
+        options.signal.addEventListener('abort', abortHandler, { once: true });
+      }
 
       req.end();
     });

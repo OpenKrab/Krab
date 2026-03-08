@@ -1,7 +1,7 @@
 import { Agent } from "../core/agent.js";
 import { type KrabConfig } from "../core/types.js";
 import { logger } from "../utils/logger.js";
-import crypto from "crypto";
+import { getSubagentRuntime, type SubagentStatus } from "../agent/subagent-runtime.js";
 
 export interface SubAgentContext {
   id: string;
@@ -9,7 +9,7 @@ export interface SubAgentContext {
   goal: string;
   parentConversationId: string;
   memory: string[];
-  status: "idle" | "running" | "completed" | "failed";
+  status: SubagentStatus;
 }
 
 /**
@@ -17,14 +17,10 @@ export interface SubAgentContext {
  * Hierarchical Planning: It delegates tasks to specific roles.
  */
 export class SuperAgent extends Agent {
-  private subAgents = new Map<
-    string,
-    { agent: Agent; context: SubAgentContext }
-  >();
-
   constructor(config: KrabConfig) {
     super(config);
     this.registerSubAgentTools();
+    getSubagentRuntime(config);
   }
 
   /**
@@ -35,87 +31,57 @@ export class SuperAgent extends Agent {
     goal: string,
     parentConversationId: string,
   ): string {
-    const id = `subagent-${crypto.randomBytes(4).toString("hex")}`;
-
-    // Create a new strict config for the subagent
-    const subConfig: KrabConfig = {
-      ...this.getConfig(),
-      maxIterations: 10, // Subagents get their own iteration limit
-      // Provide a specialized system prompt for the role
-      agents: {
-        ...this.getConfig().agents,
-        defaults: {
-          ...this.getConfig().agents?.defaults,
-          model: (() => {
-            const m =
-              this.getConfig().agents?.defaults?.model ||
-              this.getConfig().provider?.model ||
-              "gemini-2.0-flash";
-            return typeof m === "string" ? { primary: m } : m;
-          })(),
-          workspace:
-            this.getConfig().agents?.defaults?.workspace || "~/.krab/workspace",
-        },
-      },
-    };
-
-    const subAgent = new Agent(subConfig);
-
-    this.subAgents.set(id, {
-      agent: subAgent,
-      context: {
-        id,
-        role,
-        goal,
-        parentConversationId,
-        memory: [],
-        status: "idle",
-      },
+    const runtime = getSubagentRuntime(this.getConfig());
+    const record = runtime.spawn(role, goal, parentConversationId, {
+      channel: "super-agent",
+      mode: "main",
+      senderId: "super-agent",
     });
 
-    logger.info(`[SuperAgent] Spawned SubAgent ${id} for role: ${role}`);
-    return id;
+    logger.info(`[SuperAgent] Spawned SubAgent ${record.id} for role: ${role}`);
+    return record.id;
   }
 
   /**
    * Executes a task using a specific SubAgent.
    */
   public async executeSubAgentTask(id: string, task: string): Promise<string> {
-    const sub = this.subAgents.get(id);
+    const runtime = getSubagentRuntime(this.getConfig());
+    const sub = runtime.get(id);
     if (!sub) {
       throw new Error(`SubAgent ${id} not found.`);
     }
 
-    sub.context.status = "running";
     logger.info(`[SuperAgent] Delegating task to SubAgent ${id}: ${task}`);
 
-    // Give the subagent its context
-    const prompt = `[Goal: ${sub.context.goal}]\n\n[Task]: ${task}`;
-
     try {
-      // Use conversationId = id to keep memory isolated but trackable
-      const response = await sub.agent.chatWithMemory(prompt, {
-        conversationId: id,
-        useMemory: true,
-      });
-
-      sub.context.status = "completed";
-      sub.context.memory.push(`Task: ${task}\nResult: ${response}`);
-      return response;
+      const result = await runtime.execute(id, task);
+      return result.lastResult || "";
     } catch (error: any) {
-      sub.context.status = "failed";
       logger.error(`[SuperAgent] SubAgent ${id} failed: ${error.message}`);
       return `❌ SubAgent failed: ${error.message}`;
     }
   }
 
   public getSubAgentStatus(id: string): SubAgentContext | undefined {
-    return this.subAgents.get(id)?.context;
+    const runtime = getSubagentRuntime(this.getConfig());
+    const record = runtime.get(id);
+    if (!record) {
+      return undefined;
+    }
+    return {
+      id: record.id,
+      role: record.role,
+      goal: record.goal,
+      parentConversationId: record.parentConversationId,
+      memory: record.lastResult ? [`Task: ${record.lastTask || ""}\nResult: ${record.lastResult}`] : [],
+      status: record.status,
+    };
   }
 
   public killSubAgent(id: string): boolean {
     logger.info(`[SuperAgent] Terminating SubAgent ${id}`);
-    return this.subAgents.delete(id);
+    return getSubagentRuntime(this.getConfig()).kill(id);
   }
 
   /**

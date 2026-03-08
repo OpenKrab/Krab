@@ -28,6 +28,9 @@ const DEFAULT_CONFIG: RetryConfig = {
   jitterFactor: 0.1,
   retryableErrors: (error) => {
     // Default retryable errors: network errors, 5xx status codes
+    if (error?.name === 'AbortError' || /aborted/i.test(String(error?.message || ''))) {
+      return false;
+    }
     if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
       return true;
     }
@@ -142,7 +145,7 @@ function sleep(ms: number): Promise<void> {
  */
 export async function retryHttpRequest<T>(
   url: string,
-  options: RequestInit,
+  options: RequestInit & { signal?: AbortSignal },
   channelName?: string
 ): Promise<RetryResult<T>> {
   const config = getChannelRetryConfig(channelName || 'default');

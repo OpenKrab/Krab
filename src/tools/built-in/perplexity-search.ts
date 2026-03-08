@@ -22,14 +22,14 @@ interface PerplexitySearchResult {
 }
 
 // ── Search with multiple providers ───────────────────────────
-async function searchMultipleProviders(query: string): Promise<SearchResult[]> {
+async function searchMultipleProviders(query: string, signal?: AbortSignal): Promise<SearchResult[]> {
   const results: SearchResult[] = [];
   
   // Try multiple search APIs in parallel
   const searchPromises = [
-    searchDuckDuckGo(query),
-    searchBing(query),
-    searchBrave(query)
+    searchDuckDuckGo(query, signal),
+    searchBing(query, signal),
+    searchBrave(query, signal)
   ];
   
   const searchResults = await Promise.allSettled(searchPromises);
@@ -49,12 +49,12 @@ async function searchMultipleProviders(query: string): Promise<SearchResult[]> {
 }
 
 // ── DuckDuckGo Search ──────────────────────────────────────
-async function searchDuckDuckGo(query: string): Promise<SearchResult[]> {
+async function searchDuckDuckGo(query: string, signal?: AbortSignal): Promise<SearchResult[]> {
   try {
     const encoded = encodeURIComponent(query);
     const res = await fetch(
       `https://api.duckduckgo.com/?q=${encoded}&format=json&no_html=1&skip_disambig=1`,
-      { headers: { 'User-Agent': 'Krab/1.0' } }
+      { headers: { 'User-Agent': 'Krab/1.0' }, signal }
     );
 
     if (!res.ok) throw new Error(`DuckDuckGo API error: ${res.status}`);
@@ -92,14 +92,14 @@ async function searchDuckDuckGo(query: string): Promise<SearchResult[]> {
 }
 
 // ── Bing Search (if API key available) ──────────────────────
-async function searchBing(query: string): Promise<SearchResult[]> {
+async function searchBing(query: string, signal?: AbortSignal): Promise<SearchResult[]> {
   const apiKey = process.env.BING_API_KEY;
   if (!apiKey) return [];
 
   try {
     const res = await fetch(
       `https://api.bing.microsoft.com/v7.0/search?q=${encodeURIComponent(query)}&count=10`,
-      { headers: { 'Ocp-Apim-Subscription-Key': apiKey } }
+      { headers: { 'Ocp-Apim-Subscription-Key': apiKey }, signal }
     );
 
     if (!res.ok) throw new Error(`Bing API error: ${res.status}`);
@@ -120,7 +120,7 @@ async function searchBing(query: string): Promise<SearchResult[]> {
 }
 
 // ── Brave Search (if API key available) ─────────────────────
-async function searchBrave(query: string): Promise<SearchResult[]> {
+async function searchBrave(query: string, signal?: AbortSignal): Promise<SearchResult[]> {
   const apiKey = process.env.BRAVE_API_KEY;
   if (!apiKey) return [];
 
@@ -131,7 +131,8 @@ async function searchBrave(query: string): Promise<SearchResult[]> {
         headers: { 
           'X-Subscription-Token': apiKey,
           'Accept': 'application/json'
-        } 
+        },
+        signal,
       }
     );
 
@@ -155,7 +156,8 @@ async function searchBrave(query: string): Promise<SearchResult[]> {
 // ── Generate AI Answer with Citations ───────────────────────
 async function generateAIAnswer(
   query: string, 
-  sources: SearchResult[]
+  sources: SearchResult[],
+  signal?: AbortSignal,
 ): Promise<string> {
   // If no OpenRouter key, return formatted sources
   const apiKey = process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY;
@@ -191,7 +193,8 @@ async function generateAIAnswer(
           }
         ],
         temperature: 0.3
-      })
+      }),
+      signal,
     });
 
     if (!response.ok) {

@@ -17,6 +17,7 @@ export interface TTSOptions {
   speed?: number;
   outputFormat?: "mp3" | "wav" | "flac" | "aac";
   baseURL?: string;
+  signal?: AbortSignal;
 }
 
 export interface TTSResult {
@@ -27,7 +28,7 @@ export interface TTSResult {
 }
 
 export class TextToSpeech {
-  private options: Required<TTSOptions>;
+  private options: Required<Omit<TTSOptions, "signal">> & Pick<TTSOptions, "signal">;
 
   constructor(options: TTSOptions = {}) {
     this.options = {
@@ -131,7 +132,9 @@ export class TextToSpeech {
     };
 
     // Make API call
-    const mp3 = await openai.audio.speech.create(ttsRequest);
+    const mp3 = await openai.audio.speech.create(ttsRequest, {
+      signal: opts.signal,
+    });
 
     // Convert response to buffer
     const buffer = Buffer.from(await mp3.arrayBuffer());
@@ -220,7 +223,8 @@ export class TextToSpeech {
             format: audioFormat
           },
           stream: true
-        })
+        }),
+        signal: opts.signal,
       });
 
       if (!response.ok) {

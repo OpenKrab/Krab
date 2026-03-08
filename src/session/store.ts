@@ -40,6 +40,7 @@ export class SessionStore {
         messageCount: 0,
         queueMode: initialData?.queueMode || "sequential",
         replyBack: initialData?.replyBack ?? true,
+        history: initialData?.history || [],
         ...initialData
       };
 
@@ -79,6 +80,15 @@ export class SessionStore {
    */
   getSession(sessionKey: string): SessionEntry | undefined {
     return this.sessions.get(sessionKey);
+  }
+
+  setAgentId(sessionKey: string, agentId: string): void {
+    this.updateSession(sessionKey, { agentId } as Partial<SessionEntry>);
+  }
+
+  getAgentId(sessionKey: string): string | undefined {
+    const session = this.sessions.get(sessionKey) as (SessionEntry & { agentId?: string }) | undefined;
+    return session?.agentId;
   }
 
   /**

@@ -85,7 +85,7 @@ function isCacheValid(fetchedAt: number): boolean {
 }
 
 // Fetch models from OpenAI-compatible endpoint
-async function fetchOpenAIModels(endpoint: string, apiKey?: string): Promise<ModelInfo[]> {
+async function fetchOpenAIModels(endpoint: string, apiKey?: string, signal?: AbortSignal): Promise<ModelInfo[]> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
@@ -93,7 +93,7 @@ async function fetchOpenAIModels(endpoint: string, apiKey?: string): Promise<Mod
     headers["Authorization"] = `Bearer ${apiKey}`;
   }
 
-  const response = await fetch(endpoint, { headers });
+  const response = await fetch(endpoint, { headers, signal });
   if (!response.ok) {
     throw new Error(`Failed to fetch models: ${response.status}`);
   }
@@ -105,8 +105,8 @@ async function fetchOpenAIModels(endpoint: string, apiKey?: string): Promise<Mod
 }
 
 // Fetch models from OpenRouter (has rich metadata)
-async function fetchOpenRouterModels(): Promise<ModelInfo[]> {
-  const response = await fetch("https://openrouter.ai/api/v1/models");
+async function fetchOpenRouterModels(signal?: AbortSignal): Promise<ModelInfo[]> {
+  const response = await fetch("https://openrouter.ai/api/v1/models", { signal });
   if (!response.ok) {
     throw new Error(`Failed to fetch OpenRouter models: ${response.status}`);
   }
@@ -125,8 +125,8 @@ async function fetchOpenRouterModels(): Promise<ModelInfo[]> {
 }
 
 // Fetch models from Pollinations
-async function fetchPollinationsModels(): Promise<ModelInfo[]> {
-  const response = await fetch("https://text.pollinations.ai/models");
+async function fetchPollinationsModels(signal?: AbortSignal): Promise<ModelInfo[]> {
+  const response = await fetch("https://text.pollinations.ai/models", { signal });
   if (!response.ok) {
     throw new Error(`Failed to fetch Pollinations models: ${response.status}`);
   }
@@ -136,7 +136,7 @@ async function fetchPollinationsModels(): Promise<ModelInfo[]> {
 }
 
 // Main function to get models for a provider
-export async function getModels(provider: string, apiKey?: string): Promise<string[]> {
+export async function getModels(provider: string, apiKey?: string, signal?: AbortSignal): Promise<string[]> {
   const cache = loadCache();
 
   // Check cache first
@@ -152,16 +152,16 @@ export async function getModels(provider: string, apiKey?: string): Promise<stri
     switch (provider) {
       case "openai":
         if (apiKey) {
-          models = await fetchOpenAIModels(MODEL_ENDPOINTS.openai, apiKey);
+          models = await fetchOpenAIModels(MODEL_ENDPOINTS.openai, apiKey, signal);
         }
         break;
 
       case "openrouter":
-        models = await fetchOpenRouterModels();
+        models = await fetchOpenRouterModels(signal);
         break;
 
       case "pollinations":
-        models = await fetchPollinationsModels();
+        models = await fetchPollinationsModels(signal);
         break;
 
       default:
@@ -186,7 +186,7 @@ export async function getModels(provider: string, apiKey?: string): Promise<stri
 }
 
 // Get detailed model info (for OpenRouter where we have rich data)
-export async function getDetailedModels(provider: string): Promise<ModelInfo[]> {
+export async function getDetailedModels(provider: string, signal?: AbortSignal): Promise<ModelInfo[]> {
   const cache = loadCache();
 
   if (provider === "openrouter" && cache.openrouter && isCacheValid(cache.openrouter.fetchedAt)) {
@@ -195,7 +195,7 @@ export async function getDetailedModels(provider: string): Promise<ModelInfo[]> 
 
   if (provider === "openrouter") {
     try {
-      const models = await fetchOpenRouterModels();
+      const models = await fetchOpenRouterModels(signal);
       cache.openrouter = { models, fetchedAt: Date.now() };
       saveCache(cache);
       return models;
@@ -205,7 +205,7 @@ export async function getDetailedModels(provider: string): Promise<ModelInfo[]> 
   }
 
   // For other providers, return basic info
-  const modelIds = await getModels(provider);
+  const modelIds = await getModels(provider, undefined, signal);
   return modelIds.map(id => ({ id }));
 }
 

@@ -9,6 +9,7 @@ import type { ToolDefinition } from "../../core/types.js";
 async function searchTavily(
   query: string,
   maxResults: number,
+  signal?: AbortSignal,
 ): Promise<string> {
   const apiKey = process.env.TAVILY_API_KEY;
   if (!apiKey) throw new Error("TAVILY_API_KEY not set");
@@ -23,6 +24,7 @@ async function searchTavily(
       include_answer: true,
       include_raw_content: false,
     }),
+    signal,
   });
 
   if (!res.ok) throw new Error(`Tavily API error: ${res.status}`);
@@ -48,10 +50,12 @@ async function searchTavily(
 async function searchDuckDuckGo(
   query: string,
   maxResults: number,
+  signal?: AbortSignal,
 ): Promise<string> {
   const encoded = encodeURIComponent(query);
   const res = await fetch(
     `https://api.duckduckgo.com/?q=${encoded}&format=json&no_html=1&skip_disambig=1`,
+    { signal },
   );
 
   if (!res.ok) throw new Error(`DuckDuckGo API error: ${res.status}`);

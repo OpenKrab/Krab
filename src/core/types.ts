@@ -45,6 +45,8 @@ export interface ToolDefinition {
   parameters: z.ZodType<any>;
   requireApproval?: boolean; // true = ask user before executing
   sideEffect?: boolean; // true = mutating (sequential only)
+  mutationCategory?: "read" | "write" | "external" | "process";
+  maxOutputChars?: number;
   execute: (args: any) => Promise<ToolResult>;
 }
 
@@ -182,6 +184,33 @@ export interface SecretProvider {
   timeoutMs?: number;
 }
 
+export interface MessageActivationPolicy {
+  mode?: "always" | "mention" | "reply" | "dm-only" | "smart";
+  requireMentionInGroups?: boolean;
+  allowRepliesInGroups?: boolean;
+  allowThreads?: boolean;
+}
+
+export interface MessageCommandPolicy {
+  enabled?: boolean;
+  prefix?: string;
+  allow?: string[];
+  deny?: string[];
+  ownerOnly?: string[];
+}
+
+export interface MessageQueuePolicy {
+  mode?: "steer" | "followup" | "collect" | "interrupt";
+  maxPerSession?: number;
+  dropPolicy?: "oldest" | "latest" | "reject";
+}
+
+export interface RoutingDiagnosticsConfig {
+  enabled?: boolean;
+  includeReasons?: boolean;
+  maxEntries?: number;
+}
+
 export interface KrabConfig {
   // Legacy fields for backward compatibility
   provider?: ProviderConfig;
@@ -256,13 +285,15 @@ export interface KrabConfig {
           debounceMs?: number;
           byChannel?: Record<string, number>;
         };
+        activation?: MessageActivationPolicy;
+        commands?: MessageCommandPolicy;
         groupChat?: {
           historyLimit?: number;
         };
         queue?: {
-          mode?: "interrupt" | "steer" | "followup" | "collect";
-          byChannel?: Record<string, "interrupt" | "steer" | "followup" | "collect">;
-        };
+          mode?: "followup";
+        } & MessageQueuePolicy;
+        routingDiagnostics?: RoutingDiagnosticsConfig;
       };
     };
     list?: AgentOverride[];

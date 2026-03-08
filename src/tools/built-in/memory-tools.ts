@@ -16,16 +16,15 @@ const memorySearchTool: ToolDefinition = {
     const { query, limit } = args;
 
     try {
-      const results = memoryManager.searchMemory(query);
-      const limitedResults = results.slice(0, limit);
+      const rankedResults = await memoryManager.getHybridMemoryResultsAsync(query, { limit, conversationLimit: limit });
 
-      const formatted = limitedResults.map(entry => ({
-        file: entry.file,
-        type: entry.type,
-        timestamp: entry.timestamp.toISOString(),
-        content: entry.content.length > 500 
-          ? entry.content.substring(0, 500) + "..."
-          : entry.content
+      const formatted = rankedResults.map(entry => ({
+        id: entry.id,
+        source: entry.source,
+        timestamp: entry.timestamp,
+        score: entry.score,
+        preview: entry.preview,
+        metadata: entry.metadata
       }));
 
       return {
@@ -33,8 +32,8 @@ const memorySearchTool: ToolDefinition = {
         output: JSON.stringify({
           query,
           results: formatted,
-          total: results.length,
-          limited: limitedResults.length
+          total: rankedResults.length,
+          limited: rankedResults.length
         }, null, 2)
       };
     } catch (error) {

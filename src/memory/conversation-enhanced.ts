@@ -37,6 +37,21 @@ interface ConversationState {
   };
 }
 
+export interface ConversationSemanticHit {
+  conversation: {
+    metadata: {
+      id: string;
+      updatedAt: Date;
+      messageCount: number;
+    };
+    messages: Message[];
+    summary?: string;
+  };
+  score: number;
+  id?: string;
+  content?: string;
+}
+
 export class ConversationMemory {
   private conversations: Map<string, ConversationState> = new Map();
   private readonly workspace: string;
@@ -390,19 +405,46 @@ export class ConversationMemory {
   }
 
   // Semantic search across all conversations using vector memory
-  async semanticSearch(query: string, limit: number = 10): Promise<any[]> {
+  async semanticSearch(query: string, limit: number = 10): Promise<ConversationSemanticHit[]> {
     try {
       const results = await this.vectorMemory.semanticSearch(query, limit);
-      return results;
+      return results.map((result: any) => {
+        const conversationId = result.metadata?.conversationId || result.conversationId || result.id || "unknown";
+        const conversation = this.getConversation(conversationId);
+        return {
+          conversation: {
+            metadata: {
+              id: conversation?.metadata.id || conversationId,
+              updatedAt: conversation?.metadata.updatedAt || new Date(),
+              messageCount: conversation?.metadata.messageCount || conversation?.messages.length || 0,
+            },
+            messages: conversation?.messages || [],
+            summary: conversation?.summary,
+          },
+          score: typeof result.score === "number" ? result.score : 0.5,
+          id: result.id,
+          content: result.content,
+        } satisfies ConversationSemanticHit;
+      });
     } catch (error) {
       logger.warn(`[Memory] Semantic search failed: ${error}`);
       // Fallback to text search
       return this.searchConversations(query)
         .slice(0, limit)
         .map((conv) => ({
-          conversation: conv,
+          conversation: {
+            metadata: {
+              id: conv.metadata.id,
+              updatedAt: conv.metadata.updatedAt,
+              messageCount: conv.metadata.messageCount,
+            },
+            messages: conv.messages,
+            summary: conv.summary,
+          },
           score: 0.5,
-        }));
+          id: conv.metadata.id,
+          content: conv.messages.map((message) => message.content).join("\n"),
+        } satisfies ConversationSemanticHit));
     }
   }
 

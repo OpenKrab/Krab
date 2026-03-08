@@ -2,6 +2,9 @@
 // 🦀 Krab — Agent Core (ReAct Loop with Error Recovery)
 // ============================================================
 import { generateStructured, generateTextResponse } from "../providers/llm.js";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { executeToolCalls } from "../tools/executor.js";
 import { registry } from "../tools/registry.js";
 import { ConversationMemory } from "../memory/conversation-enhanced.js";
@@ -60,6 +63,7 @@ export class Agent {
     options?: {
       conversationId?: string;
       messages?: Message[];
+      signal?: AbortSignal;
     },
   ): Promise<string> {
     const conversationId = options?.conversationId || "default";
@@ -82,10 +86,10 @@ export class Agent {
     this.iterationCount = 0;
 
     // Trigger proactive summarization if needed
-    await this.summarizeIfNeeded(conversationId);
+    await this.summarizeIfNeeded(conversationId, options?.signal);
 
     try {
-      const response = await this.reactLoop(conversationId);
+      const response = await this.reactLoop(conversationId, options?.signal);
 
       // Update session for assistant response
       sessionStore.incrementMessageCount(conversationId);
@@ -140,7 +144,7 @@ export class Agent {
 
         // Reset iteration count and retry
         this.iterationCount = 0;
-        const improvedResponse = await this.reactLoop(conversationId);
+        const improvedResponse = await this.reactLoop(conversationId, options?.signal);
 
         // Reflect on the improved response too
         const secondReflection = await this.reflector.reflect(
@@ -192,7 +196,7 @@ export class Agent {
       .replace("{memory}", memoryContent || "No memory content available.");
   }
 
-  private async summarizeIfNeeded(conversationId: string): Promise<void> {
+  private async summarizeIfNeeded(conversationId: string, signal?: AbortSignal): Promise<void> {
     const stats = this.memory.getConversationStats(conversationId);
     if (!stats) return;
 
@@ -225,7 +229,7 @@ export class Agent {
           apiKey: process.env.GEMINI_API_KEY,
         };
 
-        const summary = await generateTextResponse(providerConfig, prompt);
+        const summary = await generateTextResponse(providerConfig, prompt, signal);
 
         this.memory.setSummary(conversationId, summary);
 
@@ -246,7 +250,7 @@ export class Agent {
   }
 
   // ── ReAct Loop (Think → Act → Observe → Reflect) ──────────
-  private async reactLoop(conversationId: string): Promise<string> {
+  private async reactLoop(conversationId: string, signal?: AbortSignal): Promise<string> {
     let retryCount = 0;
     const maxIterations = this.config.maxIterations || 5;
     const maxRetries = this.config.maxRetries || 3;
@@ -280,7 +284,7 @@ export class Agent {
       ];
 
       try {
-        output = await generateStructured(providerConfig, llmMessages);
+        output = await generateStructured(providerConfig, llmMessages, signal);
       } catch (err: any) {
         // Error recovery: retry with reflection
         retryCount++;
@@ -320,7 +324,7 @@ export class Agent {
           ),
         );
 
-        const results = await executeToolCalls(output.tool_calls);
+        const results = await executeToolCalls(output.tool_calls, { agentId: conversationId });
 
         // 4. OBSERVE — Feed results back to memory
         for (const { name, result } of results) {
@@ -479,6 +483,7 @@ export class Agent {
       conversationId?: string;
       useMemory?: boolean;
       maxContextItems?: number;
+      signal?: AbortSignal;
     } = {},
   ): Promise<string> {
     const { conversationId, useMemory = true, maxContextItems = 3 } = options;
@@ -528,7 +533,7 @@ export class Agent {
 
     try {
       // Generate structured output with context
-      const output = await generateStructured(providerConfig, messages);
+      const output = await generateStructured(providerConfig, messages, options?.signal);
 
       // Handle response
       if (output.next_action === "respond") {
@@ -538,7 +543,7 @@ export class Agent {
 
       // Handle tool calls (simplified - would need full react loop)
       if (output.tool_calls.length > 0) {
-        const results = await executeToolCalls(output.tool_calls);
+        const results = await executeToolCalls(output.tool_calls, { agentId: conversationId || "default" });
         const response = results
           .map((r) =>
             r.result.success

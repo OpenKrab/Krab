@@ -7,25 +7,27 @@
 // 🎨 COLOR PALETTE
 // -----------------
 export const COLORS = {
-  primary: "#ff9500", // Orange
-  secondary: "#ff6b35", // Deep orange
-  accent: "#ff9f1c", // Bright orange
-  warning: "#ffd93d", // Yellow
-  error: "#ff6b6b", // Red
-  success: "#00ff9f", // Neon green
-  info: "#ffb347", // Soft orange
-  gray: "#666666",
+  primary: "#9BFF3A",
+  secondary: "#36D9A4",
+  accent: "#FFB000",
+  warning: "#FFD95A",
+  error: "#FF6B4A",
+  success: "#A7FF4F",
+  info: "#7AE7FF",
+  gray: "#7E8A7A",
+  panel: "#1E3A2F",
+  chrome: "#4B5F4C",
 };
 
-export const TAGLINE = "Krab - AI Assistant Framework";
+export const TAGLINE = "KRAB // RETROFUTURE CONTROL GRID";
 
 // -----------------
 // 🎨 ASCII LOGO
 // -----------------
 export const ASCII_LOGO = `
-░█░█░█▀▄░█▀█░█▀▄
-░█▀▄░█▀▄░█▀█░█▀▄
-░▀░▀░▀░▀░▀░▀░▀▀░
+ █▄▀ █▀█ ▄▀█ █▄▄
+ █░█ █▀▄ █▀█ █▄█
+ ATOM-PUNK CONTROL
 `;
 
 // -----------------
@@ -80,25 +82,26 @@ export function printBanner(
   });
 
   const divider = "─".repeat(60);
-  console.log(generateGradientText(divider, COLORS.primary, COLORS.secondary));
-  console.log(`  🦀 ${applyHexColor(subtitle, COLORS.primary, true)}`);
-  console.log(generateGradientText(divider, COLORS.primary, COLORS.secondary));
+  console.log(generateGradientText(divider, COLORS.chrome, COLORS.secondary));
+  console.log(`  ${applyHexColor("◉", COLORS.accent, true)} ${applyHexColor(subtitle, COLORS.primary, true)}`);
+  console.log(`  ${applyHexColor("◌", COLORS.info, true)} ${applyHexColor("REACTOR ONLINE // SIGNAL CLEAN // COMMAND AUTHORIZED", COLORS.gray)}`);
+  console.log(generateGradientText(divider, COLORS.chrome, COLORS.secondary));
   console.log();
 }
 
 export function printSection(title: string) {
   console.log();
-  const c = COLORS.secondary;
+  const c = COLORS.chrome;
   const t = title.padEnd(56, " ");
-  const s = TAGLINE.padEnd(56, " ");
-  console.log(`${applyHexColor("┌" + "─".repeat(58) + "┐", c)}`);
+  const s = "SECTOR HUD // ATOMPUNK OPERATIONS".padEnd(56, " ");
+  console.log(`${applyHexColor("╔" + "═".repeat(58) + "╗", c)}`);
   console.log(
-    `${applyHexColor("│", c)} ${applyHexColor(t, COLORS.accent, true)} ${applyHexColor("│", c)}`,
+    `${applyHexColor("║", c)} ${applyHexColor("◉ " + t.slice(0, 54), COLORS.accent, true)} ${applyHexColor("║", c)}`,
   );
   console.log(
-    `${applyHexColor("│", c)} ${applyHexColor(s, COLORS.primary, true)} ${applyHexColor("│", c)}`,
+    `${applyHexColor("║", c)} ${applyHexColor(s, COLORS.primary, true)} ${applyHexColor("║", c)}`,
   );
-  console.log(`${applyHexColor("└" + "─".repeat(58) + "┘", c)}`);
+  console.log(`${applyHexColor("╚" + "═".repeat(58) + "╝", c)}`);
 }
 
 export function printSuccess(message: string) {
@@ -110,16 +113,16 @@ export function printError(message: string) {
 }
 
 export function printWarning(message: string) {
-  console.log(`  ${applyHexColor("⚠", COLORS.warning, true)} ${message}`);
+  console.log(`  ${applyHexColor("☢", COLORS.warning, true)} ${message}`);
 }
 
 export function printInfo(message: string) {
-  console.log(`  ${applyHexColor("ℹ", COLORS.info, true)} ${message}`);
+  console.log(`  ${applyHexColor("⌁", COLORS.info, true)} ${message}`);
 }
 
 export function printKeyValue(key: string, value: string, indent: number = 2) {
   const spaces = " ".repeat(indent);
-  const bullet = applyHexColor("●", COLORS.accent);
-  const coloredKey = applyHexColor(key + ":", COLORS.gray);
-  console.log(`${spaces}${bullet} ${coloredKey} \x1b[37m${value}\x1b[0m`);
+  const bullet = applyHexColor("▣", COLORS.accent, true);
+  const coloredKey = applyHexColor(key.toUpperCase() + ":", COLORS.gray, true);
+  console.log(`${spaces}${bullet} ${coloredKey} ${applyHexColor(value, COLORS.info)}`);
 }

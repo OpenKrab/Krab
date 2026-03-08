@@ -25,6 +25,10 @@ import {
   parseStructuredResponse as parseOutboundStructuredResponse,
   stripMediaMarkup as stripOutboundMediaMarkup,
 } from "./outbound.js";
+import { getMessageRuntimeConfig } from "../messages/runtime-config.js";
+import { normalizeIncomingMessage } from "../messages/normalizer.js";
+import { evaluateActivation } from "../messages/activation.js";
+import { recordRoutingDiagnostic } from "../messages/diagnostics.js";
 
 // ── Message Types ──────────────────────────────────────────────
 export interface BaseMessage {
@@ -381,6 +385,15 @@ export abstract class BaseChannel {
 
   // Enhanced message processing with voice support
   protected async processIncomingMessage(message: BaseMessage): Promise<void> {
+    const runtime = getMessageRuntimeConfig(this.name, message);
+    const normalized = normalizeIncomingMessage(message, this.name, runtime);
+    const activation = evaluateActivation(normalized, runtime.activation);
+
+    if (!activation.allowed) {
+      logger.debug(`[${this.name}] Message ignored by activation policy: ${activation.reason}`);
+      return;
+    }
+
     const debounceMs = this.getDebounceDelay(message);
 
     if (debounceMs > 0) {
@@ -440,14 +453,31 @@ export abstract class BaseChannel {
 
     // Route to appropriate agent and get response
     const agentManager = getAgentManager();
-    const response = await agentManager.routeAndRespond(processedMessage, this.name);
-    const formatted = this.formatResponse(response, processedMessage);
+    const runtime = getMessageRuntimeConfig(this.name, processedMessage);
+    const routed = await agentManager.routeAndRespondDetailed(processedMessage, this.name, undefined, {
+      conversationId,
+    });
+
+    if (runtime.routingDiagnostics.enabled) {
+      recordRoutingDiagnostic({
+        timestamp: new Date().toISOString(),
+        channelName: this.name,
+        senderId: processedMessage.sender.id,
+        conversationId,
+        reason: routed.reason,
+        matchedAgentId: routed.agentId,
+      }, runtime.routingDiagnostics.maxEntries);
+    }
+
+    const formatted = this.formatResponse(routed.response, processedMessage);
     await this.dispatchResponse(formatted, replyTarget);
   }
 
   private getDebounceDelay(message: BaseMessage): number {
+    const runtime = getMessageRuntimeConfig(this.name, message);
+
     // Skip debouncing for control commands
-    if (message.content.startsWith('/')) {
+    if (runtime.commands.enabled && message.content.startsWith(runtime.commands.prefix ?? '/')) {
       return 0;
     }
 
@@ -456,21 +486,7 @@ export abstract class BaseChannel {
       return 0;
     }
 
-    const config = loadConfig();
-    const messagesConfig = config.agents?.defaults?.messages;
-
-    if (!messagesConfig?.inbound) {
-      return 0;
-    }
-
-    // Check channel-specific delay
-    const channelDelay = messagesConfig.inbound.byChannel?.[this.name];
-    if (channelDelay !== undefined) {
-      return channelDelay;
-    }
-
-    // Use default delay
-    return messagesConfig.inbound.debounceMs || 0;
+    return runtime.inboundDebounceMs;
   }
 
   protected extractMentions(content: string): string[] {

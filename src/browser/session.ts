@@ -33,6 +33,8 @@ export interface BrowserOptions {
 }
 
 export class BrowserSessionManager {
+  private static cleanupHandlersRegistered = false;
+  private static cleanupTriggered = false;
   private sessions = new Map<string, BrowserSession>();
   private defaultOptions: BrowserOptions = {
     headless: false,
@@ -379,7 +381,20 @@ export class BrowserSessionManager {
   }
 
   private cleanupOnExit(): void {
+    if (BrowserSessionManager.cleanupHandlersRegistered) {
+      return;
+    }
+
     const cleanup = async () => {
+      if (BrowserSessionManager.cleanupTriggered) {
+        return;
+      }
+      BrowserSessionManager.cleanupTriggered = true;
+
+      if (this.sessions.size === 0) {
+        return;
+      }
+
       logger.info('[BrowserSession] Cleaning up sessions on exit');
       
       for (const [sessionId, session] of this.sessions.entries()) {
@@ -390,6 +405,8 @@ export class BrowserSessionManager {
         }
       }
     };
+
+    BrowserSessionManager.cleanupHandlersRegistered = true;
 
     process.on('SIGINT', cleanup);
     process.on('SIGTERM', cleanup);

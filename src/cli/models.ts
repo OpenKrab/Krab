@@ -5,6 +5,7 @@ import { Command } from "commander";
 import pc from "picocolors";
 import { loadConfig, saveConfig } from "../core/config.js";
 import { getModels } from "../utils/model-fetcher.js";
+import { printBanner, printInfo, printKeyValue, printSection, printWarning } from "../tui/style.js";
 
 interface ModelAlias {
   alias: string;
@@ -45,16 +46,18 @@ export const modelsCommand = new Command("models")
             return;
           }
 
-          console.log(pc.dim("\nFetching models for " + provider + "...\n"));
+          printBanner("Model Control Surface");
+          printSection(`Catalog Sweep // ${provider}`);
+          printInfo(`Fetching model catalog for provider ${provider}.`);
 
           const models = await getModels(provider, apiKey);
           const currentModel = config.provider?.model;
 
-          console.log(pc.bold("Available Models (" + models.length + ")\n"));
+          console.log(pc.bold(`\nAvailable Models (${models.length})\n`));
 
           for (const model of models) {
             const isCurrent = model === currentModel;
-            const icon = isCurrent ? pc.green("->") : " ";
+            const icon = isCurrent ? pc.green("◉") : pc.dim("◌");
             const name = isCurrent ? pc.bold(pc.green(model)) : model;
 
             if (options.plain) {
@@ -65,8 +68,10 @@ export const modelsCommand = new Command("models")
           }
 
           if (!options.plain) {
-            console.log(pc.dim("\nCurrent: " + currentModel));
-            console.log(pc.dim("Provider: " + provider + "\n"));
+            console.log("");
+            printKeyValue("Current", currentModel || "not set");
+            printKeyValue("Provider", provider);
+            console.log();
           }
         } catch (err: any) {
           console.error(pc.red("Error: " + err.message));
@@ -99,26 +104,27 @@ export const modelsCommand = new Command("models")
             return;
           }
 
-          console.log(pc.bold("\nModel Status\n"));
-          console.log("Provider: " + pc.cyan(config.provider?.name || "not set"));
-          console.log("Model: " + pc.cyan(config.provider?.model || "not set"));
-          console.log("API Key: " + (config.provider?.apiKey ? pc.green("Set") : pc.red("Not set")));
+          printBanner("Model Status Array");
+          printSection("Provider Readout");
+          printKeyValue("Provider", config.provider?.name || "not set");
+          printKeyValue("Model", config.provider?.model || "not set");
+          printKeyValue("API Key", config.provider?.apiKey ? "Set" : "Not set");
           
           if (config.provider?.baseURL) {
-            console.log("Base URL: " + pc.dim(config.provider.baseURL));
+            printKeyValue("Base URL", config.provider.baseURL);
           }
           
           if (fallbacksStore.length > 0) {
-            console.log(pc.bold("\nFallbacks:"));
+            printSection("Fallback Lattice");
             for (const fb of fallbacksStore) {
-              console.log("  " + fb.model + " (priority: " + fb.priority + ")");
+              console.log("  " + pc.cyan(fb.model) + pc.dim(" (priority: " + fb.priority + ")"));
             }
           }
           
           if (aliasesStore.size > 0) {
-            console.log(pc.bold("\nAliases:"));
+            printSection("Alias Matrix");
             for (const [alias, entry] of aliasesStore) {
-              console.log("  " + alias + " -> " + entry.model);
+              console.log("  " + pc.yellow(alias) + " -> " + pc.cyan(entry.model));
             }
           }
           
@@ -147,9 +153,11 @@ export const modelsCommand = new Command("models")
           config.provider!.model = resolvedModel;
           saveConfig(config);
 
-          console.log(pc.green("Model switched"));
-          console.log("  From: " + pc.dim(oldModel || "not set"));
-          console.log("  To: " + pc.cyan(resolvedModel) + "\n");
+          printSection("Model Mutation");
+          printInfo("Primary model updated.");
+          printKeyValue("From", oldModel || "not set");
+          printKeyValue("To", resolvedModel);
+          console.log();
         } catch (err: any) {
           console.error(pc.red("Error: " + err.message));
           process.exit(1);
@@ -164,7 +172,9 @@ export const modelsCommand = new Command("models")
       .argument("<model>", "Model id or alias")
       .action(async (model) => {
         try {
-          console.log(pc.green("Image model set to: " + model + "\n"));
+          printSection("Image Model Mutation");
+          printInfo(`Image model set to ${model}.`);
+          console.log();
         } catch (err: any) {
           console.error(pc.red("Error: " + err.message));
           process.exit(1);

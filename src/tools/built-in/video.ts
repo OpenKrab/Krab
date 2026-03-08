@@ -12,6 +12,7 @@ export interface VideoAnalysisOptions {
   prompt?: string;
   model?: string;
   provider?: "openrouter" | "google";
+  signal?: AbortSignal;
 }
 
 export interface VideoAnalysisResult {
@@ -106,7 +107,8 @@ async function analyzeVideoWithOpenRouter(
             ]
           }
         ]
-      })
+      }),
+      signal: options.signal,
     });
 
     if (!response.ok) {

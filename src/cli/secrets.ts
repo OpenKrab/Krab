@@ -3,32 +3,20 @@
 // ============================================================
 import { Command } from "commander";
 import pc from "picocolors";
-import * as fs from "fs";
-import { join } from "path";
-
-const ENV_PATH = join(process.cwd(), ".env");
+import {
+  createRuntimeSecretsManager,
+  readSecretsEnvFile,
+  writeSecretsEnvFile,
+  SecretsManager,
+} from "../core/secrets.js";
+import { printBanner, printInfo, printKeyValue, printSection, printWarning } from "../tui/style.js";
 
 function loadEnv(): Record<string, string> {
-  if (!fs.existsSync(ENV_PATH)) {
-    return {};
-  }
-  
-  const content = fs.readFileSync(ENV_PATH, "utf-8");
-  const env: Record<string, string> = {};
-  
-  for (const line of content.split("\n")) {
-    const match = line.match(/^([A-Za-z0-9_]+)=(.*)$/);
-    if (match) {
-      env[match[1]] = match[2];
-    }
-  }
-  
-  return env;
+  return readSecretsEnvFile();
 }
 
 function saveEnv(env: Record<string, string>) {
-  const lines = Object.entries(env).map(([key, value]) => `${key}=${value}`);
-  fs.writeFileSync(ENV_PATH, lines.join("\n") + "\n");
+  writeSecretsEnvFile(env);
 }
 
 function maskSecret(value: string): string {
@@ -50,21 +38,68 @@ export const secretsCommand = new Command("secrets")
         );
 
         if (secrets.length === 0) {
-          console.log(pc.yellow("\nNo secrets found\n"));
+          printWarning("No secrets registered in the active state profile.");
+          console.log();
           return;
         }
 
-        console.log(pc.bold(`\n🔐 Secrets (${secrets.length})\n`));
+        printBanner("Secrets Control Surface");
+        printSection(`Secret Inventory // ${secrets.length} registered`);
 
         for (const [key, value] of secrets) {
           const displayValue = options.show ? value : maskSecret(value);
-          console.log(`  ${key}: ${pc.dim(displayValue)}`);
+          printKeyValue(key, displayValue);
         }
         console.log();
 
         if (!options.show) {
-          console.log(pc.dim("Use --show to reveal values (not recommended)\n"));
+          printInfo("Use --show to reveal raw values only when operating in a secure terminal.");
+          console.log();
         }
+      })
+  )
+  .addCommand(
+    new Command("audit")
+      .description("Audit configured env secrets via SecretsManager")
+      .action(async () => {
+        const env = loadEnv();
+        const manager = createRuntimeSecretsManager();
+        const secretKeys = Object.keys(env).filter((key) =>
+          key.includes("KEY") || key.includes("TOKEN") || key.includes("SECRET") || key.includes("PASSWORD"),
+        );
+
+        if (secretKeys.length === 0) {
+          printWarning("No secrets available to audit in the active state profile.");
+          console.log();
+          return;
+        }
+
+        const refs = secretKeys.map((key) => SecretsManager.createEnvRef("default", key));
+        const audit = await Promise.all(
+          refs.map(async (ref) => {
+            const valid = manager.validateSecretRef(ref);
+            const resolution: { ok: true; value: any } | { ok: false; error: string } = valid
+              ? await manager.tryResolveSecret(ref)
+              : { ok: false, error: "Invalid secret reference" };
+            const resolvedOk = resolution.ok;
+            const resolutionError = resolvedOk ? undefined : (resolution as { ok: false; error: string }).error;
+
+            return {
+              key: ref.id,
+              valid,
+              resolved: resolvedOk,
+              error: resolutionError,
+            };
+          }),
+        );
+
+        printBanner("Secrets Audit Grid");
+        printSection(`Audit Matrix // ${audit.length} references`);
+        for (const entry of audit) {
+          const status = entry.resolved ? pc.green("ONLINE") : pc.red("FAULT");
+          console.log(`  ${status} ${pc.bold(entry.key)}${entry.error ? ` ${pc.dim(`- ${entry.error}`)}` : ""}`);
+        }
+        console.log();
       })
   )
   .addCommand(
@@ -77,8 +112,10 @@ export const secretsCommand = new Command("secrets")
         env[key] = value;
         saveEnv(env);
 
-        console.log(pc.green(`\n✓ Set ${key}\n`));
-        console.log(pc.dim("Restart Krab to apply changes\n"));
+        printSection("Secrets Mutation");
+        printInfo(`Stored ${key} in the active state profile.`);
+        printWarning("Restart Krab to guarantee all running surfaces reload the updated secret.");
+        console.log();
       })
   )
   .addCommand(
@@ -89,7 +126,8 @@ export const secretsCommand = new Command("secrets")
         const env = loadEnv();
         
         if (!(key in env)) {
-          console.log(pc.red(`\n✗ Secret '${key}' not found\n`));
+          printWarning(`Secret '${key}' not found.`);
+          console.log();
           process.exit(1);
         }
 
@@ -105,13 +143,16 @@ export const secretsCommand = new Command("secrets")
         const env = loadEnv();
         
         if (!(key in env)) {
-          console.log(pc.red(`\n✗ Secret '${key}' not found\n`));
+          printWarning(`Secret '${key}' not found.`);
+          console.log();
           process.exit(1);
         }
 
         delete env[key];
         saveEnv(env);
 
-        console.log(pc.green(`\n✓ Removed ${key}\n`));
+        printSection("Secrets Mutation");
+        printInfo(`Removed ${key} from the active state profile.`);
+        console.log();
       })
   );

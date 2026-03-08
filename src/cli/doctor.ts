@@ -8,6 +8,7 @@ import { registry } from "../tools/registry.js";
 import { existsSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
+import { printBanner, printInfo, printSection, printWarning } from "../tui/style.js";
 
 interface CheckResult {
   name: string;
@@ -149,7 +150,8 @@ async function checkProviderConnection(provider: string): Promise<CheckResult> {
 }
 
 function printResults(results: CheckResult[]) {
-  console.log(pc.bold("\n🔍 Krab Health Check\n"));
+  printBanner("Diagnostic Control Grid");
+  printSection("Health Check Matrix");
 
   let okCount = 0;
   let warnCount = 0;
@@ -158,10 +160,10 @@ function printResults(results: CheckResult[]) {
   for (const result of results) {
     const icon =
       result.status === "ok"
-        ? pc.green("✓")
+        ? pc.green("ONLINE")
         : result.status === "warn"
-        ? pc.yellow("⚠")
-        : pc.red("✗");
+        ? pc.yellow("WARN")
+        : pc.red("FAULT");
 
     const statusColor =
       result.status === "ok"
@@ -170,11 +172,11 @@ function printResults(results: CheckResult[]) {
         ? pc.yellow
         : pc.red;
 
-    console.log(`${icon} ${pc.bold(result.name)}: ${statusColor(result.status.toUpperCase())}`);
+    console.log(`${icon} ${pc.bold(result.name)} ${statusColor(result.status.toUpperCase())}`);
     console.log(`  ${result.message}`);
 
     if (result.fix) {
-      console.log(`  ${pc.cyan("Fix:")} ${result.fix}`);
+      console.log(`  ${pc.cyan("Remediation:")} ${result.fix}`);
     }
     console.log();
 
@@ -184,18 +186,18 @@ function printResults(results: CheckResult[]) {
   }
 
   // Summary
-  console.log(pc.bold("Summary:"));
+  printSection("Summary");
   console.log(`  ${pc.green(`${okCount} OK`)}`);
   if (warnCount > 0) console.log(`  ${pc.yellow(`${warnCount} Warning(s)`)}`);
   if (errorCount > 0) console.log(`  ${pc.red(`${errorCount} Error(s)`)}`);
 
   if (errorCount > 0) {
-    console.log(pc.red("\n❌ Health check failed. Please fix errors above."));
+    printWarning("Health check failed. Resolve faults before continued operation.");
     process.exit(1);
   } else if (warnCount > 0) {
-    console.log(pc.yellow("\n⚠️  Health check passed with warnings."));
+    printWarning("Health check passed with warnings.");
   } else {
-    console.log(pc.green("\n✓ All checks passed!"));
+    printInfo("All checks passed. Reactor state is stable.");
   }
 }
 

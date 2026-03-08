@@ -42,6 +42,7 @@ export interface OAuthConfig {
   scopes?: string[];
   tokenUrl?: string;
   authUrl?: string;
+  signal?: AbortSignal;
 }
 
 export class OAuthManager {
@@ -177,6 +178,7 @@ export class OAuthManager {
           client_id: config.clientId || "",
           client_secret: config.clientSecret || "",
         }),
+        signal: config.signal,
       });
 
       if (!response.ok) {

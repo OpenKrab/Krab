@@ -6,6 +6,17 @@ import { Agent } from "../core/agent.js";
 import { AgentRouter } from "./router.js";
 import { BaseMessage } from "../channels/base.js";
 import { logger } from "../utils/logger.js";
+import { sessionStore } from "../session/store.js";
+
+export interface RouteResponseResult {
+  agentId: string;
+  response: string;
+  reason: string;
+  routingMetadata?: {
+    conversationId?: string;
+    diagnostics?: any;
+  };
+}
 
 export class AgentManager {
   private config: KrabConfig;
@@ -90,20 +101,53 @@ export class AgentManager {
   async routeAndRespond(
     message: BaseMessage,
     channelName: string,
-    accountId?: string
+    accountId?: string,
+    options?: {
+      conversationId?: string;
+    }
   ): Promise<string> {
-    const agentId = this.router.routeMessage(message, channelName, accountId);
+    const result = await this.routeAndRespondDetailed(message, channelName, accountId, options);
+    return result.response;
+  }
+
+  async routeAndRespondDetailed(
+    message: BaseMessage,
+    channelName: string,
+    accountId?: string,
+    options?: {
+      conversationId?: string;
+    }
+  ): Promise<RouteResponseResult> {
+    const routing = this.router.routeMessageDetailed(message, channelName, accountId);
+    const agentId = routing.agentId;
     const agent = this.agents.get(agentId);
 
     if (!agent) {
       logger.error(`[AgentManager] No agent found for ID: ${agentId}`);
-      return "❌ Agent not found";
+      return {
+        agentId,
+        response: "❌ Agent not found",
+        reason: routing.reason,
+      };
     }
 
     // Convert BaseMessage to string input for agent
     const input = this.buildAgentInput(message);
 
-    return await agent.chat(input);
+    const response = await agent.chat(input, {
+      conversationId: options?.conversationId,
+    });
+
+    if (options?.conversationId) {
+      sessionStore.getOrCreateSession(options.conversationId);
+      sessionStore.setAgentId(options.conversationId, agentId);
+    }
+
+    return {
+      agentId,
+      response,
+      reason: routing.reason,
+    };
   }
 
   /**

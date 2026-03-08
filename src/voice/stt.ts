@@ -8,14 +8,17 @@ import * as path from "path";
 // Dynamic imports for optional dependencies
 let OpenAI: any = null;
 
+export type STTProvider = "openai" | "whisper-api" | "local-whisper" | "openrouter";
+
 export interface STTOptions {
-  provider?: "openai" | "whisper-api" | "local-whisper" | "openrouter";
+  provider?: STTProvider;
   apiKey?: string;
   model?: string;
   language?: string;
   temperature?: number;
   responseFormat?: "json" | "text" | "srt" | "verbose_json" | "vtt";
   baseURL?: string;
+  signal?: AbortSignal;
 }
 
 export interface STTResult {
@@ -32,7 +35,7 @@ export interface STTResult {
 }
 
 export class SpeechToText {
-  private options: Required<STTOptions>;
+  private options: Required<Omit<STTOptions, "signal">> & Pick<STTOptions, "signal">;
 
   constructor(options: STTOptions = {}) {
     this.options = {
@@ -131,7 +134,9 @@ export class SpeechToText {
     };
 
     // Make API call
-    const transcription = await openai.audio.transcriptions.create(transcriptionRequest);
+    const transcription = await openai.audio.transcriptions.create(transcriptionRequest, {
+      signal: this.options.signal,
+    });
 
     // Process response
     return {
@@ -208,7 +213,8 @@ export class SpeechToText {
               ]
             }
           ]
-        })
+        }),
+        signal: this.options.signal,
       });
 
       if (!response.ok) {
@@ -263,7 +269,7 @@ export class SpeechToText {
       logger.info(`[STT] Transcribing audio from URL: ${audioUrl}`);
 
       // Download audio file
-      const response = await fetch(audioUrl);
+      const response = await fetch(audioUrl, { signal: this.options.signal });
       if (!response.ok) {
         throw new Error(`Failed to download audio: ${response.status} ${response.statusText}`);
       }

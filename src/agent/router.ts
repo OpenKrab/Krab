@@ -5,6 +5,11 @@ import { KrabConfig, AgentBinding, AgentOverride } from "../core/types.js";
 import { BaseMessage } from "../channels/base.js";
 import { logger } from "../utils/logger.js";
 
+export interface RouteResolution {
+  agentId: string;
+  reason: string;
+}
+
 export class AgentRouter {
   private config: KrabConfig;
 
@@ -16,6 +21,10 @@ export class AgentRouter {
    * Route a message to the appropriate agent
    */
   routeMessage(message: BaseMessage, channelName: string, accountId?: string): string {
+    return this.routeMessageDetailed(message, channelName, accountId).agentId;
+  }
+
+  routeMessageDetailed(message: BaseMessage, channelName: string, accountId?: string): RouteResolution {
     const bindings = this.config.agents?.bindings || [];
 
     // Sort bindings by priority (higher priority first)
@@ -24,14 +33,20 @@ export class AgentRouter {
     for (const binding of sortedBindings) {
       if (this.matchesBinding(message, channelName, accountId, binding)) {
         logger.debug(`[AgentRouter] Routed message to agent: ${binding.agentId}`);
-        return binding.agentId;
+        return {
+          agentId: binding.agentId,
+          reason: this.describeBinding(binding),
+        };
       }
     }
 
     // Fallback to default agent
     const defaultAgent = this.getDefaultAgent();
     logger.debug(`[AgentRouter] No binding matched, using default agent: ${defaultAgent}`);
-    return defaultAgent;
+    return {
+      agentId: defaultAgent,
+      reason: "default-agent-fallback",
+    };
   }
 
   /**
@@ -117,6 +132,23 @@ export class AgentRouter {
 
   private checkChannel(channelName: string, match: AgentBinding['match']): boolean {
     return !match.channel || channelName === match.channel;
+  }
+
+  private describeBinding(binding: AgentBinding): string {
+    const parts: string[] = [];
+    if (binding.match.channel) {
+      parts.push(`channel=${binding.match.channel}`);
+    }
+    if (binding.match.accountId) {
+      parts.push(`accountId=${binding.match.accountId}`);
+    }
+    if (binding.match.peer?.kind) {
+      parts.push(`peer=${binding.match.peer.kind}${binding.match.peer.id ? `:${binding.match.peer.id}` : ""}`);
+    }
+    if (binding.match.guildId) {
+      parts.push(`guildId=${binding.match.guildId}`);
+    }
+    return parts.length > 0 ? `binding-match(${parts.join(",")})` : `binding-match(${binding.agentId})`;
   }
 
   /**

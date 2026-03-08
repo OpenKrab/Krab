@@ -63,10 +63,11 @@ export class Reflector {
   }
 
   async reflect(
-    userQuery: string,
+    userInput: string,
     agentResponse: string,
     conversationHistory: Message[],
     toolCalls?: any[],
+    signal?: AbortSignal,
   ): Promise<ReflectionResult> {
     if (!this.options.enabled) {
       return {
@@ -81,7 +82,7 @@ export class Reflector {
     try {
       // Prepare reflection prompt
       const reflectionInput = this.buildReflectionInput(
-        userQuery,
+        userInput,
         agentResponse,
         conversationHistory,
         toolCalls,
@@ -102,6 +103,7 @@ export class Reflector {
       const reflectionOutput = await generateStructured(
         this.reflectionModel || this.config.provider,
         reflectionMessages,
+        signal,
       );
 
       // Parse reflection result

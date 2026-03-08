@@ -5,10 +5,11 @@ import { config as dotenvConfig } from "dotenv";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import type { KrabConfig, ProviderConfig } from "./types.js";
+import { createRuntimeSecretsManager, getSecretsEnvPath } from "./secrets.js";
 
 // Load .env
 const envPaths = [
-  resolve(process.cwd(), ".env"),
+  getSecretsEnvPath(),
   resolve(process.env.HOME || process.env.USERPROFILE || "", ".krab", ".env"),
 ];
 
@@ -63,13 +64,37 @@ const PROVIDER_METADATA: Record<
   },
 };
 
+function resolveFirstSecret(envKeys: string[]): string | undefined {
+  const manager = createRuntimeSecretsManager();
+  for (const envKey of envKeys) {
+    const direct = process.env[envKey];
+    if (direct) {
+      return direct;
+    }
+
+    try {
+      const provider = (manager as any).config?.defaults?.env || "default";
+      const secretProvider = (manager as any).config?.providers?.[provider];
+      if (secretProvider?.source === "env") {
+        const value = process.env[envKey];
+        if (value) {
+          return value;
+        }
+      }
+    } catch {
+      // best effort only
+    }
+  }
+  return undefined;
+}
+
 function detectProvider(): ProviderConfig {
   const defaultModelEnv = process.env.KRAB_DEFAULT_MODEL || "";
 
   // 1. Explicit routing by prefix (e.g., "kilocode/...")
   for (const [name, meta] of Object.entries(PROVIDER_METADATA)) {
     if (defaultModelEnv.startsWith(`${name}/`)) {
-      const apiKey = meta.env.map((e) => process.env[e]).find((v) => !!v);
+      const apiKey = resolveFirstSecret(meta.env);
       if (apiKey) {
         return {
           name: name as any,
@@ -82,24 +107,30 @@ function detectProvider(): ProviderConfig {
   }
 
   // 2. Short-hand prefixes for popular ones
-  if (defaultModelEnv.startsWith("gemini/") && process.env.GEMINI_API_KEY) {
-    return {
-      name: "google",
-      model: defaultModelEnv.replace("gemini/", ""),
-      apiKey: process.env.GEMINI_API_KEY,
-    };
+  if (defaultModelEnv.startsWith("gemini/")) {
+    const apiKey = resolveFirstSecret(["GEMINI_API_KEY", "GOOGLE_API_KEY"]);
+    if (apiKey) {
+      return {
+        name: "google",
+        model: defaultModelEnv.replace("gemini/", ""),
+        apiKey,
+      };
+    }
   }
-  if (defaultModelEnv.startsWith("claude/") && process.env.ANTHROPIC_API_KEY) {
-    return {
-      name: "anthropic",
-      model: defaultModelEnv.replace("claude/", ""),
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    };
+  if (defaultModelEnv.startsWith("claude/")) {
+    const apiKey = resolveFirstSecret(["ANTHROPIC_API_KEY"]);
+    if (apiKey) {
+      return {
+        name: "anthropic",
+        model: defaultModelEnv.replace("claude/", ""),
+        apiKey,
+      };
+    }
   }
 
   // Auto-detection by ENV existence
   for (const [name, meta] of Object.entries(PROVIDER_METADATA)) {
-    const apiKey = meta.env.map((e) => process.env[e]).find((v) => !!v);
+    const apiKey = resolveFirstSecret(meta.env);
     if (!apiKey) continue;
 
     // If the user specified KRAB_DEFAULT_MODEL but it didn't have a prefix
@@ -149,9 +180,9 @@ export function loadConfig(): KrabConfig {
 
 export function saveConfig(config: KrabConfig): void {
   // Save config to .env file (simplified - real implementation would save JSON)
-  const envPath = resolve(process.cwd(), ".env");
+  const envPath = getSecretsEnvPath();
   const lines: string[] = [];
-  
+
   if (config.provider?.name) {
     lines.push(`KRAB_PROVIDER=${config.provider.name}`);
   }

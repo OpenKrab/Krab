@@ -6,6 +6,11 @@ import { logger } from "../utils/logger.js";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { createRequire } from "module";
+import { fileURLToPath } from "url";
+
+const require = createRequire(import.meta.url);
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
 // Hook metadata schema
 export const HookMetadataSchema = z.object({
@@ -58,7 +63,7 @@ export class HooksManager {
   private hookDirs = [
     path.join(process.cwd(), "hooks"), // workspace hooks
     path.join(os.homedir(), ".krab", "hooks"), // managed hooks
-    path.join(__dirname, "bundled") // bundled hooks
+    path.join(moduleDir, "bundled") // bundled hooks
   ];
 
   constructor() {
@@ -217,6 +222,3 @@ export class HooksManager {
 
 // Export singleton instance
 export const hooksManager = new HooksManager();
-
-// Export types
-export type { HookDefinition, HookEvent, HookHandler };

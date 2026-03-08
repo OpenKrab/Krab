@@ -15,6 +15,7 @@ import { pluginLoader } from "./plugins/loader.js";
 import { logger } from "./utils/logger.js";
 import { GatewayServer } from "./gateway/server.js";
 import { runChat } from "./tui/chat.js";
+import { runDashboard } from "./tui/dashboard.js";
 import { runOnboarding, type OnboardingOptions } from "./cli/onboarding.js";
 import {
   gatewayCmd,
@@ -28,6 +29,32 @@ import { bootstrapCmd } from "./cli/bootstrap-commands.js";
 import { sessionCmd } from "./cli/session-commands.js";
 import { agentCmd } from "./cli/agent-commands.js";
 import { presenceCmd } from "./cli/presence-commands.js";
+import { presenceTracker } from "./presence/tracker.js";
+import { initializeAgentManager } from "./agent/manager.js";
+import { initializeSubagentRuntime } from "./agent/subagent-runtime.js";
+import { obsidianCommand } from "./cli/obsidian-simple.js";
+import { createSchedulerCommands } from "./scheduler/cli.js";
+import { bannerCommand } from "./cli/banner-commands.js";
+import { taglinesCommand } from "./cli/taglines-commands.js";
+import { doctorCommand } from "./cli/doctor.js";
+import { securityCommand } from "./cli/security.js";
+import { sessionCommand } from "./cli/session.js";
+import { agentCommand } from "./cli/agent.js";
+import { browserCommand } from "./cli/browser.js";
+import { updateCommand } from "./cli/update.js";
+import { pairingCommand } from "./cli/pairing.js";
+import { modelsCommand } from "./cli/models.js";
+import { logsCommand } from "./cli/logs.js";
+import { systemCommand } from "./cli/system.js";
+import { skillsCommand } from "./cli/skills.js";
+import { messageCommand } from "./cli/message.js";
+import { setupCommand } from "./cli/setup.js";
+import { secretsCommand } from "./cli/secrets.js";
+import { daemonCommand } from "./cli/daemon.js";
+import { voicecallCommand } from "./cli/voicecall.js";
+import { nodesCommand } from "./cli/nodes.js";
+import { pluginsCommand } from "./cli/plugins.js";
+import { execApprovalsCommand } from "./cli/exec-approvals.js";
 
 // ── Register Built-in Tools ────────────────────────────────
 import { datetimeTool } from "./tools/built-in/datetime.js";
@@ -161,64 +188,10 @@ for (const tool of securityTools) {
   registry.register(tool);
 }
 
-// ── Plugin System ───────────────────────────────────────────────────
-import { initializeAgentManager } from "./agent/manager.js";
-
-// ── Initialize Multi-Agent System ───────────────────────────
-const config = loadConfig();
-initializeAgentManager(config);
-
-// ── Initialize Presence Tracking ────────────────────────────
-presenceTracker.updatePresence({
-  mode: "cli",
-  reason: "self"
-});
-
-// ── Register Obsidian Tools ───────────────────────────────────────────────
-import { obsidianTools } from "./tools/built-in/obsidian.js";
-
-for (const tool of obsidianTools) {
-  registry.register(tool);
-}
-
-// ── Register Obsidian Commands ───────────────────────────────
-import { obsidianCommand } from "./cli/obsidian-simple.js";
-// ── Register Scheduler Commands ───────────────────────────────
-import { createSchedulerCommands } from "./scheduler/cli.js";
-
-// ── Banner ─────────────────────────────────────────────────
-import { printBanner, printKeyValue } from "./tui/style.js";
-
-// ── Register Banner Command ───────────────────────────────
-import { bannerCommand } from "./cli/banner-commands.js";
-
-// ── Register Taglines Command ───────────────────────────────
-import { taglinesCommand } from "./cli/taglines-commands.js";
-
-// ── Register New Commands ───────────────────────────────────
-import { doctorCommand } from "./cli/doctor.js";
-import { securityCommand } from "./cli/security.js";
-import { sessionCommand } from "./cli/session.js";
-import { agentCommand } from "./cli/agent.js";
-import { browserCommand } from "./cli/browser.js";
-import { updateCommand } from "./cli/update.js";
-import { pairingCommand } from "./cli/pairing.js";
-import { modelsCommand } from "./cli/models.js";
-import { logsCommand } from "./cli/logs.js";
-import { systemCommand } from "./cli/system.js";
-import { skillsCommand } from "./cli/skills.js";
-import { messageCommand } from "./cli/message.js";
-import { setupCommand } from "./cli/setup.js";
-import { secretsCommand } from "./cli/secrets.js";
-import { daemonCommand } from "./cli/daemon.js";
-import { voicecallCommand } from "./cli/voicecall.js";
-import { hooksCommand } from "./cli/hooks.js";
-import { nodesCommand } from "./cli/nodes.js";
-import { pluginsCommand } from "./cli/plugins.js";
-import { execApprovalsCommand } from "./cli/exec-approvals.js";
-
 // ── CLI Program (must be before addCommand calls) ────────
 const program = new Command();
+
+let runtimeInitialized = false;
 
 function applyGlobalRuntimeOptions(opts: {
   dev?: boolean;
@@ -247,6 +220,13 @@ function applyGlobalRuntimeOptions(opts: {
 
   if (opts.logLevel) {
     process.env.KRAB_LOG_LEVEL = opts.logLevel;
+  }
+
+  if (!runtimeInitialized) {
+    const runtimeConfig = loadConfig();
+    initializeAgentManager(runtimeConfig);
+    initializeSubagentRuntime(runtimeConfig);
+    runtimeInitialized = true;
   }
 }
 
@@ -286,8 +266,6 @@ program.addCommand(bannerCommand);
 program.addCommand(taglinesCommand);
 program.addCommand(doctorCommand);
 program.addCommand(securityCommand);
-program.addCommand(sessionCommand);
-program.addCommand(agentCommand);
 program.addCommand(browserCommand);
 program.addCommand(updateCommand);
 program.addCommand(pairingCommand);
@@ -435,7 +413,7 @@ program
   .description("Start interactive chat with Krab (classic mode)")
   .action(() => runChat());
 
-program.command("tui").description("Alias for interactive chat TUI").action(() => runChat());
+program.command("tui").description("Start Krab dashboard TUI").action(() => runDashboard());
 
 function normalizeOnboardOptions(options: any): OnboardingOptions {
   const channels = typeof options.channels === "string"

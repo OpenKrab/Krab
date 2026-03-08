@@ -31,158 +31,204 @@
 
 ## 📊 **Framework Architecture**
 
-```mermaid
-graph TB
-    User[User Input] --> CLI[CLI Interface]
-    CLI --> Router[Multi-Agent Router]
-    
-    Router --> Session[Session Manager]
-    Router --> Queue[Message Queue]
-    Router --> Presence[Presence Tracker]
-    
-    Session --> Agent[AGI Agent Core]
-    Queue --> Agent
-    Presence --> Agent
-    
-    Agent --> Memory[Memory System]
-    Agent --> Tools[Tool Registry]
-    Agent --> OAuth[OAuth Manager]
-    Agent --> Retry[Retry System]
-    
-    Tools --> Creative[🎨 Creative AI]
-    Tools --> Automation[🖥️ Automation]
-    Tools --> Collaboration[🤝 Collaboration]
-    Tools --> Enterprise[📊 Enterprise]
-    
-    Creative --> ImageGen[Image Generation]
-    Creative --> Voice[Voice Intelligence]
-    
-    Automation --> Desktop[Desktop Control]
-    Automation --> Web[Web Automation]
-    Automation --> Code[Code Execution]
-    
-    Collaboration --> MultiAgent[Multi-Agent System]
-    Collaboration --> MCP[MCP Integration]
-    Collaboration --> Scheduler[Task Scheduling]
-    
-    Enterprise --> Analytics[Advanced Analytics]
-    Enterprise --> Security[Security System]
-    Enterprise --> Cloud[Cloud Deployment]
-    
-    Memory --> Markdown[Markdown Storage]
-    Memory --> Vector[Vector Search]
-    
-    OAuth --> Providers[AI Providers]
-    Retry --> Providers
-    
-    Providers --> Gemini[Gemini]
-    Providers --> OpenAI[OpenAI]
-    Providers --> Anthropic[Anthropic]
-    Providers --> Local[Local Models]
-    
-    Agent --> Response[AGI Response]
-    Response --> User
+```
+┌─────────────────┐
+│   User Input    │
+└─────────────────┘
+         │
+         ▼
+┌─────────────────┐
+│  CLI Interface  │
+└─────────────────┘
+         │
+         ▼
+┌─────────────────┐
+│ Multi-Agent     │
+│     Router      │
+└─────────────────┘
+    │    │    │
+    ▼    ▼    ▼
+┌─────┐ ┌─────┐ ┌─────┐
+│Session│ │Message│ │Presence│
+│Manager│ │Queue │ │Tracker │
+└─────┘ └─────┘ └─────┘
+    │    │    │
+    └────┼────┘
+         ▼
+┌─────────────────┐
+│  AGI Agent Core │
+└─────────────────┘
+    │    │    │    │
+    ▼    ▼    ▼    ▼
+┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐
+│Memory│ │Tools │ │OAuth │ │Retry │
+│System│ │Registry│ │Manager│ │System│
+└─────┘ └─────┘ └─────┘ └─────┘
+    │
+    ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Tool Categories                          │
+├─────────────────┬─────────────────┬─────────────────┬─────┤
+│ 🎨 Creative AI  │ 🖥️ Automation   │ 🤝 Collaboration │ 📊 │
+│ • Image Gen     │ • Desktop Ctrl  │ • Multi-Agent    │ Ent │
+│ • Voice Intel   │ • Web Auto      │ • MCP Integration│     │
+│                 │ • Code Exec     │ • Scheduling     │     │
+└─────────────────┴─────────────────┴─────────────────┴─────┘
+         │
+         ▼
+┌─────────────────────────────────────────────────────────────┐
+│                AI Providers (with OAuth)                    │
+├─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┤
+│Gemini│OpenAI│Anthropic│Local│Google│Claude│GPT-4│DeepSeek│Azure│
+│2.0   │GPT-4 │Claude   │Models│Gemini│Code  │Turbo │Coder   │OpenAI│
+└─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
+         │
+         ▼
+┌─────────────────┐
+│  AGI Response   │
+└─────────────────┘
+         │
+         ▼
+┌─────────────────┐
+│   User Output   │
+└─────────────────┘
 ```
 
 ## 🔄 **Agent Workflow**
 
-```mermaid
-flowchart TD
-    Start([Start]) --> Input[User Input]
-    Input --> Think[🧠 Think: Generate Plan]
-    Think --> Tools{Use Tools?}
-    
-    Tools -->|Yes| Execute[⚡ Execute Tools]
-    Tools -->|No| Respond[💬 Generate Response]
-    
-    Execute --> Success{Success?}
-    Success -->|Yes| Reflect[🔍 Reflect on Results]
-    Success -->|No| Retry[🔄 Retry with Different Approach]
-    
-    Reflect --> Quality{Quality OK?}
-    Quality -->|Yes| Respond
-    Quality -->|No| Improve[📈 Improve Response]
-    
-    Retry --> MaxRetries{Max Retries?}
-    MaxRetries -->|Yes| Error[❌ Report Error]
-    MaxRetries -->|No| Think
-    
-    Improve --> Think
-    Respond --> Output[📤 Output Response]
-    Error --> Output
-    Output --> End([End])
+```
+┌─────────────┐
+│   START     │
+└─────────────┘
+       │
+       ▼
+┌─────────────┐
+│ User Input  │
+└─────────────┘
+       │
+       ▼
+┌─────────────┐
+│ 🧠 Think:   │
+│ Generate    │
+│    Plan     │
+└─────────────┘
+       │
+       ▼
+┌─────────────┐
+│ Use Tools?  │
+└─────────────┘
+   │         │
+   │ YES     │ NO
+   ▼         ▼
+┌─────────────┐ ┌─────────────┐
+│ ⚡ Execute  │ │ 💬 Generate │
+│    Tools    │ │  Response   │
+└─────────────┘ └─────────────┘
+       │               │
+       ▼               │
+┌─────────────┐       │
+│  Success?   │       │
+└─────────────┘       │
+   │         │       │
+   │ YES     │ NO    │
+   ▼         ▼       │
+┌─────────────┐ ┌─────────────┐ │
+│ 🔍 Reflect  │ │ 🔄 Retry    │ │
+│   Results   │ │  Different  │ │
+└─────────────┘ │ Approach    │ │
+       │       └─────────────┘ │
+       ▼               │       │
+┌─────────────┐       ▼       │
+│ Quality OK? │ ┌─────────────┐ │
+└─────────────┘ │ Max Retries?│ │
+   │         │ └─────────────┘ │
+   │ YES     │ NO      │       │
+   ▼         ▼         ▼       │
+┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+│ 💬 Generate │ │ 📈 Improve  │ │ ❌ Report   │
+│  Response   │ │  Response   │ │   Error     │
+└─────────────┘ └─────────────┘ └─────────────┘
+       │               │               │
+       └───────────────┼───────────────┘
+                       ▼
+             ┌─────────────────┐
+             │ 📤 Output       │
+             │   Response      │
+             └─────────────────┘
+                       │
+                       ▼
+                 ┌─────────────┐
+                 │     END     │
+                 └─────────────┘
 ```
 
 ## 🏗️ **System Architecture**
 
-```mermaid
-graph LR
-    subgraph "User Interface"
-        CLI[CLI]
-        Web[Web UI]
-        Desktop[Desktop App]
-    end
-    
-    subgraph "Core Engine"
-        Agent[AGI Agent]
-        Memory[Memory System]
-        Tools[Tool Registry]
-    end
-    
-    subgraph "AI Providers"
-        Gemini[Gemini]
-        OpenAI[OpenAI]
-        Anthropic[Anthropic]
-        Local[Local Models]
-    end
-    
-    subgraph "Feature Modules"
-        Creative[Creative AI]
-        Automation[Automation]
-        Collaboration[Collaboration]
-        Enterprise[Enterprise]
-    end
-    
-    CLI --> Agent
-    Web --> Agent
-    Desktop --> Agent
-    
-    Agent --> Memory
-    Agent --> Tools
-    Agent --> Gemini
-    Agent --> OpenAI
-    Agent --> Anthropic
-    Agent --> Local
-    
-    Tools --> Creative
-    Tools --> Automation
-    Tools --> Collaboration
-    Tools --> Enterprise
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                           User Interface                            │
+├─────────────────────┬─────────────────────┬─────────────────────┤
+│        CLI          │      Web UI         │   Desktop App       │
+│ • Command Line      │ • Real-time Chat    │ • Electron Client    │
+│ • Interactive Mode  │ • Collaborative     │ • Native Experience  │
+│ • Advanced Options  │ • Web Dashboard     │ • Cross-platform     │
+└─────────────────────┴─────────────────────┴─────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                            Core Engine                              │
+├─────────────────────┬─────────────────────┬─────────────────────┤
+│     AGI Agent       │  Memory System      │  Tool Registry       │
+│ • Reasoning Engine  │ • Markdown Storage  │ • 70+ Tools          │
+│ • Multi-Agent       │ • Vector Search     │ • Approval Workflows  │
+│ • Session Mgmt      │ • Context Injection │ • Plugin System      │
+└─────────────────────┴─────────────────────┴─────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                           AI Providers                              │
+├─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┤
+│Gemini│OpenAI│Anthropic│Local│Google│Claude│GPT-4│DeepSeek│Azure│Other│
+│2.0   │GPT-4 │Claude   │Models│Gemini│Code  │Turbo │Coder   │OpenAI│Providers│
+└─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
+                                  ▲
+                                  │
+┌─────────────────────────────────────────────────────────────────────┐
+│                         Feature Modules                             │
+├─────────────────┬─────────────────┬─────────────────┬─────────────┤
+│ 🎨 Creative AI  │ 🖥️ Automation   │ 🤝 Collaboration │ 📊 Enterprise│
+│ • Image Gen     │ • Desktop Ctrl  │ • Multi-Agent    │ • Analytics  │
+│ • Voice Proc    │ • Web Scraping  │ • MCP Protocol   │ • Security   │
+│ • Media Tools   │ • Code Exec     │ • Task Sched     │ • Cloud Deploy│
+└─────────────────┴─────────────────┴─────────────────┴─────────────┘
 ```
 
 ## 🎯 **Tool Execution Flow**
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant Agent
-    participant Tools
-    participant LLM
-    participant Memory
-    
-    User->>Agent: User Input
-    Agent->>Memory: Load Context
-    Agent->>LLM: Generate Plan
-    
-    alt Plan Uses Tools
-        Agent->>Tools: Execute Tool(s)
-        Tools->>Agent: Tool Results
-        Agent->>LLM: Process Results
-    end
-    
-    LLM->>Agent: Generate Response
-    Agent->>Memory: Store Conversation
-    Agent->>User: Final Response
+```
+┌──────┐          ┌──────┐          ┌──────┐          ┌──────┐          ┌──────┐
+│ User │          │Agent │          │Memory│          │ LLM  │          │Tools │
+└──────┘          └──────┘          └──────┘          └──────┘          └──────┘
+   │                   │                   │                   │                   │
+   │─── User Input ──►│                   │                   │                   │
+   │                   │─── Load Context ─►│                   │                   │
+   │                   │                   │◄─── Context ──────│                   │
+   │                   │─── Generate Plan ─►│                   │                   │
+   │                   │                   │◄─── Plan ─────────│                   │
+   │                   │                   │                   │                   │
+   │                   │            [Plan Uses Tools?]         │                   │
+   │                   │                   │                   │                   │
+   │                   │─── Execute Tool(s) ──────────────────►│                   │
+   │                   │                   │                   │                   │
+   │                   │◄─── Tool Results ─────────────────────│                   │
+   │                   │─── Process Results ─►│                   │
+   │                   │                   │◄─── Processed ────│                   │
+   │                   │                   │                   │                   │
+   │                   │◄─── Generate Response ────────────────│                   │
+   │                   │─── Store Conversation ───────────────►│                   │
+   │                   │                   │                   │                   │
+   │◄─── Final Response ◄─────────────────────│                   │
+   │                   │                   │                   │                   │
 ```
 
 ## 🎯 **OpenClaw-Inspired Features**
@@ -331,6 +377,8 @@ Or use development mode:
 npm run dev
 ```
 
+Runtime state, secrets, and profile data are now resolved through Krab state directories. Use `krab --dev ...` or `krab --profile <name> ...` to isolate gateway, secrets, sessions, and runtime metadata.
+
 ## 🎯 Usage Examples
 
 ### Interactive Chat
@@ -339,16 +387,18 @@ npm run dev
 npm start chat
 ```
 
+### Dashboard TUI
+
+```bash
+npm start tui
+```
+
+The dashboard TUI now includes live gateway runtime status, tool execution diagnostics, routing diagnostics, subagent runtime visibility, semantic-first hybrid memory lookup shortcuts, and operator controls for subagent cancellation plus diagnostics drilldown/filtering. These controls sit on top of the same shared runtime state used by the gateway and CLI status surfaces, so operator views, cancellation requests, and diagnostics reflect the active runtime instead of a separate TUI-only state model.
+
 ### Quick Questions
 
 ```bash
 npm start ask "Generate an image of a futuristic city"
-```
-
-### Knowledge Base (Obsidian)
-
-```bash
-npm start ask "Search my obsidian vault for notes about AGI and summarize them"
 ```
 
 ### Web Automation
@@ -374,6 +424,7 @@ npm start ask "Take a screenshot and save it to desktop"
 ### Core Commands
 
 - `krab chat` - Start interactive chat session
+- `krab tui` - Start dashboard TUI with operational runtime panels
 - `krab ask <question>` - Ask a single question
 - `krab tools` - List all available tools
 - `krab config` - Manage configuration
@@ -410,18 +461,27 @@ npm start ask "Take a screenshot and save it to desktop"
 ### Advanced Commands
 
 - `krab gateway` - Start web API server
+- `krab gateway status --deep` - Show runtime, readiness, presence, and tool state
 - `krab scheduler` - Manage scheduled tasks
 - `krab analytics` - View performance metrics
 - `krab security` - Security management
 - `krab bootstrap run` - Run agent bootstrapping process
 - `krab hooks list` - List all active hooks
 - `krab memory search <query>` - Search memory system
+- `krab secrets list|set|get|remove` - Manage state-aware secrets in the active Krab profile
 
 ### In-Chat Commands
 
 - `/plugins` - Show loaded plugins and their status
 - `/tools` - View all loaded tools and permissions
 - `/memory` - Check conversation buffer status
+- `/memory find <query>` - Search semantic-aware hybrid memory entries from the dashboard TUI
+- `/gateway` - Show gateway runtime health and readiness in the dashboard TUI
+- `/subagents` - Show live subagent runtime status in the dashboard TUI
+- `/subagents inspect <id>` - Inspect one subagent in detail from the dashboard TUI
+- `/subagents kill <id>` - Request cancellation for a running subagent from the dashboard TUI
+- `/tools filter <name>` - Filter tool diagnostics by tool name in the dashboard TUI
+- `/tools clear` - Clear recorded tool diagnostics in the dashboard TUI
 - `/debug` - View current provider and configuration
 - `/clear` - Clear conversation memory
 - `/help` - Show available commands
@@ -446,18 +506,28 @@ npm start ask "Take a screenshot and save it to desktop"
 14. **Scheduler System** - Automated task execution with hooks
 15. **Browser Agent** - Web automation with AI vision
 16. **Security Enhancements** - Enterprise security and compliance with OAuth
-17. **Obsidian Integration** ❤️ - Deep Knowledge Base connection with memory system
-18. **Plugin Ecosystem** 🧩 - Lego-style modular architecture
+17. **Obsidian Integration** - Deep Knowledge Base connection with memory system
+18. **Plugin Ecosystem** - Lego-style modular architecture
 19. **Testing & Validation** - Framework testing and validation
 20. **Session Management** - OpenClaw-inspired session isolation and persistence
 21. **Presence Tracking** - Real-time instance monitoring with TTL cleanup
-22. **Message Handling** - Advanced debouncing and queueing with multiple modes
-23. **Retry System** - Exponential backoff with jitter and channel optimization
-24. **OAuth Authentication** - Multi-provider authentication with token management
-25. **Memory Systems** - Markdown storage with vector search capabilities
-26. **Bootstrapping** - Agent personality development with Q&A ritual
-27. **Hooks System** - Event-driven extensibility with conditional firing
-28. **Enhanced Tool Registry** - Advanced tool discovery with approval workflows
+22. **Gateway Runtime Status** - Shared health/status snapshots for CLI, TUI, and gateway endpoints
+23. **Subagent Runtime** - Shared subagent registry with lifecycle state and session-backed delegation
+24. **Hybrid Memory Retrieval** - Semantic-aware retrieval blending ranked memory files, stored conversation history, and conversation semantic hits
+25. **Tool Diagnostics & Guards** - Tool execution traces, duplicate-call suppression, truncation guards, centralized policy checks, and policy lifecycle hooks
+26. **State-Aware Secrets** - Profile-aware secrets path handling with shared runtime audit helpers
+27. **Message Handling** - Advanced debouncing and queueing with multiple modes
+28. **Retry System** - Exponential backoff with jitter and channel optimization
+29. **Enhanced Tool Registry** - Advanced tool discovery with approval and policy workflows
+30. **Abort-Aware Cancellation** - Cancellation propagation from gateway HTTP/WebSocket disconnects and subagent runtime kill requests into agent, provider, search, fetch, STT/TTS, image, video, and model-discovery execution paths where the underlying SDK or transport supports abort signals
+31. **Operator-Focused TUI Controls** - Interactive runtime controls for subagent inspection, cancellation requests, and tool diagnostics filtering/clearing
+
+### Runtime Notes
+
+- Gateway OpenAI-compatible chat routes now propagate disconnect-triggered cancellation for both HTTP and WebSocket request lifecycles.
+- Tool policy decisions flow through centralized evaluation plus configurable pre/post policy hook stages, which keeps approval, denial, and diagnostics behavior aligned across routed agents.
+- Hybrid memory retrieval combines ranked file memory, stored conversation history, and semantic conversation hits before surfacing results to tools and operator flows.
+- Abort propagation is best-effort by transport: paths that use `fetch()` or SDKs with signal support can be interrupted directly, while transports without native abort support still fall back to cooperative cancellation behavior.
 
 ### 🚧 **Future Enhancements (Phase 5)**
 

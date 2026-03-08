@@ -5,8 +5,16 @@ import { z } from "zod";
 import { sessionStore } from "../../session/store.js";
 import { ConversationMemory } from "../../memory/conversation-enhanced.js";
 import type { ToolDefinition } from "../../core/types.js";
+import { getSubagentRuntime } from "../../agent/subagent-runtime.js";
+import { loadConfig } from "../../core/config.js";
 import * as path from "path";
 import * as os from "os";
+
+function getWorkspaceMemory(): ConversationMemory {
+  const config = loadConfig();
+  const workspace = config.agents?.defaults?.workspace || process.cwd();
+  return new ConversationMemory(workspace);
+}
 
 // ── sessions_list Tool ──────────────────────────────────────
 const sessionsListTool: ToolDefinition = {
@@ -20,6 +28,7 @@ const sessionsListTool: ToolDefinition = {
   }),
   execute: async (args) => {
     const { kinds, limit, activeMinutes, messageLimit } = args;
+    const memory = messageLimit > 0 ? getWorkspaceMemory() : null;
 
     let sessions = sessionStore.getAllSessions();
 
@@ -62,10 +71,8 @@ const sessionsListTool: ToolDefinition = {
       };
 
       // Include messages if requested
-      if (messageLimit > 0) {
+      if (messageLimit > 0 && memory) {
         try {
-          // Load messages from conversation memory
-          const memory = new ConversationMemory(path.join(os.homedir(), ".krab", "workspace"));
           const messages = memory.getRecentMessages(session.sessionKey, messageLimit);
           // Filter out tool results as per OpenClaw behavior
           sessionResult.messages = messages
@@ -99,7 +106,7 @@ const sessionsHistoryTool: ToolDefinition = {
     const { sessionKey, limit, includeTools } = args;
 
     try {
-      const memory = new ConversationMemory(path.join(os.homedir(), ".krab", "workspace"));
+      const memory = getWorkspaceMemory();
       let messages = memory.getRecentMessages(sessionKey, limit);
 
       // Filter tool results if not requested
@@ -138,6 +145,8 @@ const sessionsSendTool: ToolDefinition = {
     // and handle agent-to-agent communication
 
     try {
+      const runtime = getSubagentRuntime(loadConfig());
+
       // Check if session exists
       const session = sessionStore.getSession(sessionKey);
       if (!session) {
@@ -150,7 +159,10 @@ const sessionsSendTool: ToolDefinition = {
 
       // For fire-and-forget (timeout 0)
       if (timeoutSeconds === 0) {
-        // In a real implementation, enqueue the message
+        const record = runtime.get(sessionKey);
+        if (record) {
+          void runtime.execute(sessionKey, message);
+        }
         return {
           success: true,
           output: JSON.stringify({
@@ -160,9 +172,19 @@ const sessionsSendTool: ToolDefinition = {
         };
       }
 
-      // For synchronous execution
-      // This is simplified - in reality, this would spawn an agent run
-      // and wait for completion with timeout
+      const record = runtime.get(sessionKey);
+      if (record) {
+        const result = await runtime.execute(sessionKey, message);
+        return {
+          success: result.status !== "failed",
+          output: JSON.stringify({
+            runId: `run_${Date.now()}`,
+            status: result.status,
+            reply: result.lastResult || "",
+            error: result.error,
+          })
+        };
+      }
 
       return {
         success: true,
@@ -196,25 +218,30 @@ const sessionsSpawnTool: ToolDefinition = {
     const { channel, initialMessage, sessionType } = args;
 
     try {
-      // Generate a new session key
-      const sessionKey = `spawned_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const runtime = getSubagentRuntime(loadConfig());
+      const record = runtime.spawn(
+        sessionType === "group" ? "group-worker" : "session-worker",
+        initialMessage || "Handle delegated session tasks",
+        "sessions_spawn",
+        {
+          channel: channel || "internal",
+          mode: sessionType,
+          senderId: "system",
+        },
+      );
 
-      // Create session entry
-      const session = sessionStore.getOrCreateSession(sessionKey, {
-        channel: channel || "internal",
-        mode: sessionType,
-        senderId: "system"
-      });
+      const session = sessionStore.getSession(record.id)!;
 
-      // If initial message provided, it would be processed
-      // For now, just return the session info
+      if (initialMessage) {
+        await runtime.execute(record.id, initialMessage);
+      }
 
       return {
         success: true,
         output: JSON.stringify({
-          sessionKey: session.sessionKey,
+          sessionKey: record.id,
           sessionId: session.sessionId,
-          status: "spawned"
+          status: record.status
         })
       };
 

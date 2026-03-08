@@ -185,52 +185,62 @@ async function startGateway(options: any): Promise<void> {
   }
 }
 
-async function checkGatewayStatus(options: any = {}): Promise<void> {
+export async function getGatewayStatusSnapshot(options: any = {}): Promise<any> {
+  const config = loadConfig();
+  const port = config.gateway?.port || 18789;
+
+  const statusData: any = {
+    port,
+    bind: config.gateway?.bind || "loopback",
+    auth: config.gateway?.auth?.mode || "none",
+    workspace: config.agents?.defaults?.workspace || "~/.krab/workspace",
+    running: false,
+    health: null as any,
+    ready: null as any,
+  };
+
+  // Check if running
   try {
-    const config = loadConfig();
-    const port = config.gateway?.port || 18789;
+    const healthRes = await fetch(`http://127.0.0.1:${port}/health`);
+    if (healthRes.ok) {
+      statusData.running = true;
+      statusData.health = await healthRes.json();
+    }
+  } catch {
+    statusData.running = false;
+  }
 
-    const statusData: any = {
-      port,
-      bind: config.gateway?.bind || "loopback",
-      auth: config.gateway?.auth?.mode || "none",
-      workspace: config.agents?.defaults?.workspace || "~/.krab/workspace",
-      running: false,
-      health: null as any,
-      ready: null as any,
-    };
-
-    // Check if running
+  // Deep check
+  if (options.deep && statusData.running) {
     try {
-      const healthRes = await fetch(`http://127.0.0.1:${port}/health`);
-      if (healthRes.ok) {
-        statusData.running = true;
-        statusData.health = await healthRes.json();
+      const readyRes = await fetch(`http://127.0.0.1:${port}/ready`);
+      statusData.ready = readyRes.ok
+        ? await readyRes.json()
+        : { status: "not_ready" };
+    } catch {
+      statusData.ready = { status: "unreachable" };
+    }
+
+    try {
+      const statusRes = await fetch(`http://127.0.0.1:${port}/status`);
+      if (statusRes.ok) {
+        statusData.details = await statusRes.json();
+        if (statusData.details?.status) {
+          statusData.runtimeStatus = statusData.details.status;
+        }
       }
     } catch {
-      statusData.running = false;
+      // ignore
     }
+  }
 
-    // Deep check
-    if (options.deep && statusData.running) {
-      try {
-        const readyRes = await fetch(`http://127.0.0.1:${port}/ready`);
-        statusData.ready = readyRes.ok
-          ? await readyRes.json()
-          : { status: "not_ready" };
-      } catch {
-        statusData.ready = { status: "unreachable" };
-      }
+  return statusData;
+}
 
-      try {
-        const statusRes = await fetch(`http://127.0.0.1:${port}/status`);
-        if (statusRes.ok) {
-          statusData.details = await statusRes.json();
-        }
-      } catch {
-        // ignore
-      }
-    }
+async function checkGatewayStatus(options: any = {}): Promise<void> {
+  try {
+    const statusData = await getGatewayStatusSnapshot(options);
+    const port = statusData.port;
 
     // JSON output
     if (options.json) {
@@ -247,11 +257,14 @@ async function checkGatewayStatus(options: any = {}): Promise<void> {
 
     if (statusData.running) {
       console.log(pc.green("   Runtime: ✅ Running"));
-      if (statusData.health?.uptime) {
-        const uptime = statusData.health.uptime;
+      if (statusData.health?.uptime || statusData.details?.uptimeSeconds) {
+        const uptime = statusData.health?.uptime || statusData.details?.uptimeSeconds;
         const hours = Math.floor(uptime / 3600);
         const mins = Math.floor((uptime % 3600) / 60);
         console.log(pc.dim(`   Uptime: ${hours}h ${mins}m`));
+      }
+      if (statusData.runtimeStatus) {
+        console.log(`   Health: ${statusData.runtimeStatus}`);
       }
     } else {
       console.log(pc.red("   Runtime: ❌ Not running"));
@@ -278,6 +291,12 @@ async function checkGatewayStatus(options: any = {}): Promise<void> {
         );
         console.log(
           `   Tools loaded: ${statusData.details.tools?.count ?? "unknown"}`,
+        );
+        console.log(
+          `   Presence active: ${statusData.details.presence?.active ?? 0}`,
+        );
+        console.log(
+          `   Config loaded: ${statusData.details.readiness?.configLoaded ? "yes" : "no"}`,
         );
       }
     }

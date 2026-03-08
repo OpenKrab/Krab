@@ -9,7 +9,7 @@ import { createInterface } from "readline";
 import { readFileSync } from "fs";
 import { resolve } from "path";
 import { fileURLToPath } from "url";
-import { printBanner, printKeyValue, COLORS } from "./style.js";
+import { printBanner, printKeyValue, printSection, printInfo, printWarning, COLORS } from "./style.js";
 
 const __dirname = resolve(fileURLToPath(new URL(".", import.meta.url)));
 const I18N_PATH = resolve(__dirname, "i18n.json");
@@ -30,6 +30,27 @@ interface ChatMessage {
   timestamp: Date;
 }
 
+function renderTranscriptEntry(message: ChatMessage): void {
+  const timestamp = pc.dim(message.timestamp.toLocaleTimeString());
+  if (message.role === "user") {
+    console.log(`  ${pc.bold(pc.yellow("◉ OPERATOR"))} ${timestamp}`);
+    console.log(`  ${pc.gray("║")} ${message.content.replace(/\n/g, `\n  ${pc.gray("║")} `)}`);
+    console.log("");
+    return;
+  }
+
+  if (message.role === "assistant") {
+    console.log(`  ${pc.bold(pc.green("◉ KRAB"))} ${timestamp}`);
+    console.log(`  ${pc.gray("║")} ${styleMarkdown(message.content).replace(/\n/g, `\n  ${pc.gray("║")} `)}`);
+    console.log("");
+    return;
+  }
+
+  console.log(`  ${pc.bold(pc.cyan("◉ SYSTEM"))} ${timestamp}`);
+  console.log(`  ${pc.gray("║")} ${message.content.replace(/\n/g, `\n  ${pc.gray("║")} `)}`);
+  console.log("");
+}
+
 /**
  * Basic TUI-friendly markdown styler for Krab
  */
@@ -38,13 +59,13 @@ function styleMarkdown(text: string): string {
 
   // Code blocks: ```language ... ```
   styled = styled.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
-    const head = pc.bgBlack(pc.dim(` 📝 ${lang || "code"} `));
-    const body = pc.bgBlack(pc.cyan(code));
+    const head = ` ${pc.bold(pc.yellow("▣"))} ${pc.bold(pc.cyan((lang || "code").toUpperCase()))} `;
+    const body = pc.cyan(code);
     return `\n${head}\n${body}`;
   });
 
   // Inline Code: `code`
-  styled = styled.replace(/`([^`]+)`/g, pc.bgBlack(pc.cyan(" $1 ")));
+  styled = styled.replace(/`([^`]+)`/g, `${pc.bold(pc.yellow("‹"))}${pc.cyan("$1")}${pc.bold(pc.yellow("›"))}`);
 
   // Bold: **text**
   styled = styled.replace(/\*\*([^*]+)\*\*/g, pc.bold(pc.yellow("$1")));
@@ -67,7 +88,7 @@ export async function runChat() {
     config = loadConfig();
   } catch (err: any) {
     p.outro(pc.red(i18n.config_error.replace("{error}", err.message)));
-    console.log(pc.dim(i18n.wizard_hint));
+    printWarning(i18n.wizard_hint);
     console.log(pc.cyan(i18n.wizard_command));
     return;
   }
@@ -76,12 +97,13 @@ export async function runChat() {
   const messages: ChatMessage[] = [];
 
   // Header
-  // The ASCII banner replaces the generic text header
   printBanner(i18n.header || "Interactive Chat TUI");
   printKeyValue("Provider", config.provider.name);
   printKeyValue("Model", config.provider.model);
+  printSection("Chat Reactor");
+  printInfo(i18n.command_hint);
 
-  console.log(pc.dim("\n  " + i18n.command_hint));
+  console.log("");
 
   const rl = createInterface({
     input: process.stdin,
@@ -91,7 +113,7 @@ export async function runChat() {
   const askQuestion = (): Promise<string> => {
     return new Promise((resolve) => {
       rl.question(
-        `  \x1B[38;2;255;107;107m▶\x1B[0m \x1B[1m\x1B[36mYou:\x1B[0m `,
+        `  ${pc.bold(pc.yellow("◉"))} ${pc.bold(pc.cyan("operator"))}${pc.dim(" :: transmit> ")}`,
         (answer) => {
           resolve(answer);
         },
@@ -111,7 +133,7 @@ export async function runChat() {
         case "exit":
         case "quit":
         case "q":
-          console.log(pc.dim(i18n.bye));
+          printInfo(i18n.bye);
           rl.close();
           return;
 
@@ -121,40 +143,43 @@ export async function runChat() {
           printBanner(i18n.header || "Interactive Chat TUI");
           printKeyValue("Provider", config.provider.name);
           printKeyValue("Model", config.provider.model);
+          printSection("Chat Reactor");
+          printInfo(i18n.command_hint);
           console.log("");
           messages.length = 0;
           continue;
 
         case "help":
         case "?":
+          printSection("Command Reference");
           console.log(pc.dim(i18n.help_title));
           console.log(i18n.help_exit);
           console.log(i18n.help_clear);
           console.log(i18n.help_help);
           console.log(i18n.help_model);
           console.log(i18n.help_memory);
+          console.log("");
           continue;
 
         case "model":
-          console.log(pc.dim(`\nProvider: ${config.provider.name}`));
-          console.log(pc.dim(`Model: ${config.provider.model}\n`));
+          printSection("Model Readout");
+          printKeyValue("Provider", config.provider.name);
+          printKeyValue("Model", config.provider.model);
+          console.log("");
           continue;
 
         case "memory":
           const stats = agent.getMemoryStats();
-          console.log(
-            pc.dim(
-              `\nMemory: ${stats.totalMessages} messages in ${stats.totalConversations} conversations`,
-            ),
-          );
-          console.log(pc.dim(`Limit: ${config.memoryLimit || 50}\n`));
+          printSection("Memory Reservoir");
+          printKeyValue("Messages", String(stats.totalMessages));
+          printKeyValue("Conversations", String(stats.totalConversations));
+          printKeyValue("Limit", String(config.memoryLimit || 50));
+          console.log("");
           continue;
 
         default:
-          console.log(
-            pc.yellow(i18n.unknown_cmd.replace("{command}", command)),
-          );
-          console.log(pc.dim(i18n.help_hint));
+          printWarning(i18n.unknown_cmd.replace("{command}", command));
+          printInfo(i18n.help_hint);
           continue;
       }
     }
@@ -163,40 +188,36 @@ export async function runChat() {
     if (!input.trim()) continue;
 
     // Add user message
-    messages.push({
+    const userMessage: ChatMessage = {
       role: "user",
       content: input,
       timestamp: new Date(),
-    });
+    };
+    messages.push(userMessage);
+    renderTranscriptEntry(userMessage);
 
     // Show thinking indicator
-    process.stdout.write(pc.dim(i18n.thinking));
+    process.stdout.write(pc.dim("⌁ calibrating reactor thought-path..."));
 
     try {
       // Get response from agent
       const response = await agent.chat(input);
 
       // Clear thinking indicator
-      process.stdout.write("\r" + " ".repeat(20) + "\r");
+      process.stdout.write("\r" + " ".repeat(48) + "\r");
 
-      // Format and Print response
-      const styledResponse = styleMarkdown(response);
-      console.log(
-        `\n  \x1B[38;2;0;255;159m●\x1B[0m \x1B[1m\x1B[38;2;255;149;0mKrab\x1B[0m`,
-      );
-      console.log(
-        `  ${pc.gray("│")} ${styledResponse.replace(/\n/g, `\n  ${pc.gray("│")} `)}\n`,
-      );
-
-      // Add to history
-      messages.push({
+      printSection("Assistant");
+      const assistantMessage: ChatMessage = {
         role: "assistant",
         content: response,
         timestamp: new Date(),
-      });
+      };
+      messages.push(assistantMessage);
+      renderTranscriptEntry(assistantMessage);
     } catch (err: any) {
-      process.stdout.write("\r" + " ".repeat(20) + "\r");
-      console.log(pc.red(i18n.error_prefix) + err.message + "\n");
+      process.stdout.write("\r" + " ".repeat(48) + "\r");
+      printWarning(i18n.error_prefix + err.message);
+      console.log("");
     }
   }
 

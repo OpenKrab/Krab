@@ -59,6 +59,7 @@ function toModelMessages(messages: Message[]) {
 async function generateOpenAICompatibleText(
   config: ProviderConfig,
   messages: Message[],
+  signal?: AbortSignal,
 ): Promise<string> {
   // Convert messages to OpenAI format
   const openaiMessages = messages
@@ -94,6 +95,7 @@ async function generateOpenAICompatibleText(
     method: "POST",
     headers,
     body: JSON.stringify(payload),
+    signal,
   });
 
   if (!response.ok) {
@@ -131,6 +133,7 @@ function extractJsonFromText(text: string): unknown {
 export async function generateStructured(
   config: ProviderConfig,
   messages: Message[],
+  signal?: AbortSignal,
 ): Promise<AgentOutput> {
   // For providers without native structured output support, use text mode + manual parsing
   if (PLAIN_TEXT_PROVIDERS.has(config.name)) {
@@ -166,7 +169,7 @@ Required JSON structure:
 
     // Use direct fetch for providers that don't work with AI SDK structured output
     if (config.name === "kilocode" || config.name === "opencode" || config.name === "ollama" || config.name === "openrouter") {
-      text = await generateOpenAICompatibleText(config, modifiedMessages);
+      text = await generateOpenAICompatibleText(config, modifiedMessages, signal);
     } else {
       // Fallback to AI SDK generateText for other providers
       const model = createModel(config);
@@ -174,6 +177,7 @@ Required JSON structure:
         model: model as any,
         messages: toModelMessages(modifiedMessages),
         temperature: 0.1,
+        abortSignal: signal,
       });
       text = result.text;
     }
@@ -193,6 +197,7 @@ Required JSON structure:
     output: Output.object({ schema: AgentOutputSchema }),
     messages: toModelMessages(messages),
     temperature: 0.1,
+    abortSignal: signal,
   });
 
   return output as AgentOutput;
@@ -202,20 +207,24 @@ Required JSON structure:
 export async function generateStream(
   config: ProviderConfig,
   messages: Message[],
+  signal?: AbortSignal,
 ): Promise<any> {
   const model = createModel(config);
   logger.debug(`[Provider] Streaming ${config.name}/${config.model}`);
   return streamText({
     model: model as any,
     messages: toModelMessages(messages),
+    abortSignal: signal,
   });
 }
 
 export async function generateTextResponse(
   config: ProviderConfig,
   messages: Message[],
+  signal?: AbortSignal,
 ): Promise<string> {
-  const result = await generateStream(config, messages);
+  const result = await generateStream(config, messages, signal);
+
   let text = "";
   for await (const chunk of result.textStream) {
     text += chunk;

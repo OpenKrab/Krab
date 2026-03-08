@@ -12,6 +12,7 @@ import { ConversationMemory } from "../memory/conversation-enhanced.js";
 import { registry } from "../tools/registry.js";
 import { ChannelManager } from "../channels/manager.js";
 import { presenceTracker } from "../presence/tracker.js";
+import { buildGatewayRuntimeSnapshot } from "./runtime-state.js";
 import { readFileSync, existsSync, statSync, createReadStream } from "fs";
 import { join, resolve } from "path";
 import { fileURLToPath } from "url";
@@ -346,9 +347,7 @@ export class GatewayServer {
         const stats = {
           version: "0.1.0",
           serverTime: new Date().toISOString(),
-          uptime: (Date.now() - this.startTime) / 1000,
-          memory: process.memoryUsage().rss / 1024 / 1024,
-          channels: this.channelManager.getStats(),
+          ...this.getRuntimeSnapshot(),
           agent: this.defaultAgent.getMemoryStats(),
         };
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -495,10 +494,14 @@ export class GatewayServer {
           };
           res.write(`data: ${JSON.stringify(startChunk)}\n\n`);
 
+          const streamAbortController = new AbortController();
+          req.on("close", () => streamAbortController.abort("HTTP stream client disconnected"));
+
           // Get full response from agent
           const response = await agent.chat(lastMessage, {
             conversationId: sessionId as string,
             messages: messages.slice(0, -1),
+            signal: streamAbortController.signal,
           });
 
           // Stream it in chunks (simulate streaming for now)
@@ -540,9 +543,13 @@ export class GatewayServer {
           res.end();
         } else {
           // ── Non-Streaming Response ────────────────────────
+          const responseAbortController = new AbortController();
+          req.on("close", () => responseAbortController.abort("HTTP client disconnected"));
+
           const response = await agent.chat(lastMessage, {
             conversationId: sessionId as string,
             messages: messages.slice(0, -1),
+            signal: responseAbortController.signal,
           });
 
           const promptTokens = messages.reduce(
@@ -625,12 +632,15 @@ export class GatewayServer {
 
   // ── Health / Ready / Status ────────────────────────────────
   private handleHealthCheck(res: ServerResponse): void {
+    const snapshot = this.getRuntimeSnapshot();
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(
       JSON.stringify({
-        status: "healthy",
-        timestamp: new Date().toISOString(),
-        uptime: Math.floor((Date.now() - this.startTime) / 1000),
+        status: snapshot.status,
+        timestamp: snapshot.timestamp,
+        uptime: snapshot.uptimeSeconds,
+        readiness: snapshot.readiness,
+        presence: snapshot.presence,
       }),
     );
   }
@@ -658,29 +668,10 @@ export class GatewayServer {
   }
 
   private handleStatus(res: ServerResponse): void {
-    const stats = this.conversations.getStats();
-    const toolNames = registry.getNames();
-    const agentStats = Array.from(this.agents.entries()).map(([id]) => ({
-      id,
-    }));
+    const snapshot = this.getRuntimeSnapshot();
 
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(
-      JSON.stringify({
-        status: "running",
-        timestamp: new Date().toISOString(),
-        uptime: Math.floor((Date.now() - this.startTime) / 1000),
-        conversations: stats,
-        agents: agentStats,
-        tools: {
-          count: toolNames.length,
-          list: toolNames,
-        },
-        websocket: {
-          connections: this.wss.clients.size,
-        },
-      }),
-    );
+    res.end(JSON.stringify(snapshot));
   }
 
   // ── WebSocket ──────────────────────────────────────────────
@@ -794,9 +785,15 @@ export class GatewayServer {
         this.agents.set(sessionId, agent);
       }
 
+      const abortController = new AbortController();
+      const abortOnClose = () => abortController.abort("WebSocket client disconnected");
+      ws.once("close", abortOnClose);
+
       const response = await agent.chat(message.content, {
         conversationId: sessionId,
+        signal: abortController.signal,
       });
+      ws.off("close", abortOnClose);
 
       ws.send(
         JSON.stringify({
@@ -841,10 +838,16 @@ export class GatewayServer {
         }),
       );
 
+      const abortController = new AbortController();
+      const abortOnClose = () => abortController.abort("WebSocket stream client disconnected");
+      ws.once("close", abortOnClose);
+
       // Get full response
       const response = await agent.chat(message.content, {
         conversationId: sessionId,
+        signal: abortController.signal,
       });
+      ws.off("close", abortOnClose);
 
       // Stream in chunks
       const chunkSize = 8;
@@ -887,13 +890,27 @@ export class GatewayServer {
     uptime: number;
     tools: number;
   } {
+    const snapshot = this.getRuntimeSnapshot();
     return {
-      connections: this.wss.clients.size,
-      conversations: this.conversations.getStats(),
-      agents: this.agents.size,
-      uptime: Math.floor((Date.now() - this.startTime) / 1000),
-      tools: registry.getNames().length,
+      connections: snapshot.websocket.connections,
+      conversations: snapshot.conversations,
+      agents: snapshot.agents.length,
+      uptime: snapshot.uptimeSeconds,
+      tools: snapshot.tools.count,
     };
+  }
+
+  private getRuntimeSnapshot() {
+    return buildGatewayRuntimeSnapshot({
+      startTime: this.startTime,
+      websocketConnections: this.wss.clients.size,
+      channelStats: this.channelManager.getStats(),
+      conversationStats: this.conversations.getStats(),
+      agentIds: Array.from(this.agents.keys()),
+      configLoaded: true,
+      channelManagerReady: true,
+      defaultAgentReady: !!this.defaultAgent,
+    });
   }
 
   reloadConfig(newConfig: GatewayConfig): void {

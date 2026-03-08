@@ -2,7 +2,7 @@
 // 🦀 Krab — Secrets Management (OpenClaw-inspired)
 // ============================================================
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
-import { resolve } from "path";
+import { dirname, join, resolve } from "path";
 import { execSync } from "child_process";
 import { logger } from "../utils/logger.js";
 
@@ -32,6 +32,54 @@ export interface SecretsConfig {
   };
 }
 
+export interface SecretsAuditEntry {
+  key: string;
+  resolved: boolean;
+  source: SecretRef["source"];
+  provider: string;
+  error?: string;
+}
+
+export function resolveSecretsStateRoot(): string {
+  const envRoot = process.env.KRAB_STATE_DIR || process.env.KRAB_DATA_DIR;
+  if (envRoot && envRoot.trim().length > 0) {
+    return resolve(envRoot);
+  }
+  return process.cwd();
+}
+
+export function getSecretsEnvPath(stateRoot = resolveSecretsStateRoot()): string {
+  return join(stateRoot, ".env");
+}
+
+export function readSecretsEnvFile(envPath = getSecretsEnvPath()): Record<string, string> {
+  if (!existsSync(envPath)) {
+    return {};
+  }
+
+  const content = readFileSync(envPath, "utf-8");
+  const env: Record<string, string> = {};
+  for (const line of content.split("\n")) {
+    const match = line.match(/^([A-Za-z0-9_]+)=(.*)$/);
+    if (match) {
+      env[match[1]] = match[2];
+    }
+  }
+  return env;
+}
+
+export function writeSecretsEnvFile(
+  env: Record<string, string>,
+  envPath = getSecretsEnvPath(),
+): void {
+  const parentDir = dirname(envPath);
+  if (!existsSync(parentDir)) {
+    mkdirSync(parentDir, { recursive: true });
+  }
+  const lines = Object.entries(env).map(([key, value]) => `${key}=${value}`);
+  writeFileSync(envPath, lines.join("\n") + "\n");
+}
+
 export class SecretsManager {
   private config: SecretsConfig;
   private cache: Map<string, any> = new Map();
@@ -41,6 +89,18 @@ export class SecretsManager {
     this.workspace = resolve(workspace);
     this.config = config;
     this.ensureWorkspace();
+  }
+
+  async tryResolveSecret(secretRef: SecretRef): Promise<{ ok: true; value: any } | { ok: false; error: string }> {
+    try {
+      const value = await this.resolveSecret(secretRef);
+      return { ok: true, value };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   private ensureWorkspace(): void {
@@ -324,3 +384,43 @@ export class SecretsManager {
     return result;
   }
 }
+
+ export function createDefaultSecretsConfig(stateRoot: string): SecretsConfig {
+   return {
+     providers: {
+       default: {
+         source: "env",
+       },
+       filemain: {
+         source: "file",
+         path: resolve(stateRoot, "secrets.json"),
+         mode: "json",
+         timeoutMs: 5000,
+       },
+     },
+     defaults: {
+       env: "default",
+       file: "filemain",
+       exec: "default",
+     },
+   };
+ }
+
+ export function createSecretsManager(stateRoot: string, config?: Partial<SecretsConfig>): SecretsManager {
+   const defaults = createDefaultSecretsConfig(stateRoot);
+   const merged: SecretsConfig = {
+     providers: {
+       ...defaults.providers,
+       ...(config?.providers || {}),
+     },
+     defaults: {
+       ...defaults.defaults,
+       ...(config?.defaults || {}),
+     },
+   };
+   return new SecretsManager(stateRoot, merged);
+ }
+
+ export function createRuntimeSecretsManager(config?: Partial<SecretsConfig>): SecretsManager {
+   return createSecretsManager(resolveSecretsStateRoot(), config);
+ }

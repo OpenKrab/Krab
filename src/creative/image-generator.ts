@@ -20,6 +20,7 @@ export interface ImageGenerationOptions {
   guidance?: number;
   outputFormat?: 'png' | 'jpg' | 'webp';
   aspectRatio?: '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9';
+  signal?: AbortSignal;
 }
 
 export interface ImageEditOptions {
@@ -137,7 +138,8 @@ export class ImageGenerator {
         quality,
         style,
         response_format: 'b64_json'
-      })
+      }),
+      signal: options.signal,
     });
     if (!response.ok) {
       throw new Error(`OpenAI image generation failed: ${response.status} ${await response.text()}`);
@@ -268,7 +270,8 @@ export class ImageGenerator {
           image_config: {
             aspect_ratio: aspectRatioMap[aspectRatio] || '1:1'
           }
-        })
+        }),
+        signal: options.signal,
       });
 
       if (!response.ok) {
