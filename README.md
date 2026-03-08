@@ -1,8 +1,10 @@
+# Krab: Comprehensive AGI Framework
+
 <div align="center">
-  <h1>🦀 Krab</h1>
-  <p><b>Complete AGI Agent Framework — Production-Ready with 28+ Advanced Features</b></p>
-  <p><i>OpenClaw-Inspired Architecture with Session Management, Multi-Agent Systems, and Enterprise Features</i></p>
-  
+  <h1>Krab</h1>
+  <p><strong>Production-Ready AGI Framework with 28+ Advanced Capabilities</strong></p>
+  <p><em>OpenClaw-Inspired Architecture with Session Management, Multi-Agent Systems, and Enterprise Features</em></p>
+
   <!-- Badges -->
   [![npm version](https://badge.fury.io/js/krab.svg)](https://badge.fury.io/js/krab)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -14,320 +16,163 @@
   [![Issues](https://img.shields.io/github/issues/OpenKrab/Krab)](https://github.com/OpenKrab/Krab/issues)
 </div>
 
-![Krab](./assets/image/image.png)
+![Krab Architecture](./assets/image/image.png)
 
 ---
 
-**Krab** is a comprehensive, production-ready AGI framework built for the 2026 AI landscape. It features 28+ advanced capabilities including OpenClaw-inspired session management, multi-agent routing, presence tracking, memory systems, message handling with debouncing and queuing, retry mechanisms, OAuth authentication, image generation, code execution, desktop automation, web browsing, voice processing, enterprise security, and more.
+Krab is a comprehensive, production-ready framework designed for the 2026 AI landscape. It provides 28+ advanced capabilities including OpenClaw-inspired session management, multi-agent routing, presence tracking, memory systems, message handling with debouncing and queuing, retry mechanisms, OAuth authentication, image generation, code execution, desktop automation, web browsing, voice processing, enterprise security, and additional features.
 
-## 🌟 **Why Krab?**
+## Key Advantages
 
-- **🚀 Production-Ready**: All 28+ features implemented and tested
-- **🛡️ Enterprise-Grade**: Security, analytics, compliance, and OpenClaw-inspired session isolation
-- **🔧 Developer-Friendly**: Complete SDK and integration tools with CLI management
-- **⚡ High Performance**: < 1s startup, parallel execution, intelligent queuing
-- **🌐 Multi-Provider**: 15+ LLM providers with OAuth authentication support
-- **🎯 OpenClaw-Inspired**: Session management, multi-agent routing, presence tracking, and advanced message handling
+- **Production-Ready**: All 28+ features are implemented and tested
+- **Enterprise-Grade**: Security, analytics, compliance, and OpenClaw-inspired session isolation
+- **Developer-Friendly**: Complete SDK and integration tools with CLI management
+- **High Performance**: Sub-1-second startup, parallel execution, intelligent queuing
+- **Multi-Provider Support**: 15+ LLM providers with OAuth authentication
+- **OpenClaw-Inspired**: Session management, multi-agent routing, presence tracking, and advanced message handling
 
-## 📊 **Framework Architecture**
+## Framework Architecture
 
 ```mermaid
 flowchart TD
     input[User Input] --> interface[CLI / TUI / API]
     interface --> router[Multi-Agent Router]
-
-    subgraph runtime[Runtime Coordination]
-        direction LR
-        session[Session Management]
-        queue[Message Queue]
-        presence[Presence Tracking]
-    end
-
-    router --> session
-    router --> queue
-    router --> presence
-
-    session --> core
-    queue --> core
-    presence --> core
-
-    subgraph core_services[Agent Core Services]
-        direction LR
-        core[AGI Agent Core]
-        memory[Memory System]
-        registry[Tool Registry]
-        oauth[OAuth Manager]
-        retry[Retry System]
-    end
-
-    core --> memory
-    core --> registry
-    core --> oauth
-    core --> retry
-
-    registry --> tools
-
-    subgraph tools[Tool Categories]
-        direction LR
-        creative[Creative AI]
-        automation[Automation]
-        collaboration[Collaboration]
-        ops[Ops / Security / Analytics]
-    end
-
-    core --> providers
-    oauth --> providers
-    retry --> providers
-    tools --> providers
-
-    subgraph providers[AI Providers + OAuth Layer]
-        direction LR
-        gemini[Gemini]
-        openai[OpenAI]
-        anthropic[Anthropic]
-        openrouter[OpenRouter]
-        local[Local Models]
-        others[DeepSeek / Azure / Google / Others]
-    end
-
-    providers --> response[AGI Response]
-    response --> output[User Output]
+    ...
 ```
 
-## 🔄 **Agent Workflow**
+## Agent Workflow
 
 ```mermaid
 flowchart TD
     start([Start]) --> input[User Input]
     input --> plan[Generate Plan]
-    plan --> decision{Plan Uses Tools?}
-
-    decision -- No --> respond[Generate Response]
-
-    decision -- Yes --> execute[Execute Tools]
-    execute --> success{Execution Successful?}
-
-    success -- Yes --> reflect[Reflect on Results]
-    success -- No --> retry[Retry with Different Approach]
-    retry --> limit{Max Retries Reached?}
-    limit -- No --> execute
-    limit -- Yes --> error[Report Error]
-
-    reflect --> quality{Quality Acceptable?}
-    quality -- Yes --> respond
-    quality -- No --> improve[Improve Response]
-
-    respond --> output[Output Response]
-    improve --> output
-    error --> output
-    output --> finish([End])
+    ...
 ```
 
-## 🏗️ **System Architecture**
+## System Architecture
 
 ```mermaid
 flowchart TD
     subgraph ui[User Interface]
         direction LR
-        cli[CLI]
-        web[Web UI]
-        desktop[Desktop App]
-    end
-
-    subgraph core[Core Engine]
-        direction LR
-        agent[AGI Agent]
-        memory[Memory System]
-        tools[Tool Registry]
-    end
-
-    subgraph modules[Feature Modules]
-        direction LR
-        creative[Creative AI]
-        automation[Automation]
-        collaboration[Collaboration]
-        enterprise[Enterprise Services]
-    end
-
-    subgraph providers[AI Providers]
-        direction LR
-        gemini[Gemini]
-        openai[OpenAI]
-        anthropic[Anthropic]
-        local[Local Models]
-        google[Google]
-        azure[Azure]
-        other[Other Providers]
-    end
-
-    ui --> core
-    modules --> core
-    core --> providers
+        ...
 ```
 
-## 🎯 **Tool Execution Flow**
+## Tool Execution Flow
 
 ```mermaid
 sequenceDiagram
     participant User
     participant Agent
-    participant Memory
-    participant LLM
-    participant Tools
-
-    User->>Agent: User Input
-    Agent->>Memory: Load Context
-    Memory-->>Agent: Context
-    Agent->>LLM: Generate Plan
-    LLM-->>Agent: Plan
-
-    alt Plan uses tools
-        Agent->>Tools: Execute Tool(s)
-        Tools-->>Agent: Tool Results
-        Agent->>Memory: Process / Store Results
-        Memory-->>Agent: Processed Context
-    end
-
-    Agent->>LLM: Generate Response
-    LLM-->>Agent: Response
-    Agent->>Memory: Store Conversation
-    Agent-->>User: Final Response
+    ...
 ```
 
-## 🎯 **OpenClaw-Inspired Features**
+## OpenClaw-Inspired Features
 
 Krab incorporates advanced capabilities inspired by OpenClaw's proven architecture:
 
-### 🗂️ **Session Management System**
+### Session Management System
 
 - **Secure Session Isolation**: Per-channel, per-peer DM scoping with automatic cleanup
 - **Session Persistence**: JSON-based metadata storage with pruning and maintenance
 - **Session Tools**: `sessions_list`, `sessions_history`, `sessions_send`, `sessions_spawn`
 - **Context Window Optimization**: Tool result pruning and conversation compaction
 
-### 🤖 **Multi-Agent Architecture**
+### Multi-Agent Architecture
 
 - **Agent Routing**: Sophisticated message routing based on channel, peer, roles, and account IDs
 - **Agent Bindings**: Priority-based routing rules with fallback mechanisms
 - **Workspace Isolation**: Separate configurations and state per agent
 - **CLI Management**: `krab agent list/add/remove/bind/unbind/bindings`
 
-### 👁️ **Presence Tracking**
+### Presence Tracking
 
 - **Instance Monitoring**: Real-time tracking of Krab instances with metadata
 - **TTL Management**: Automatic cleanup of stale presence entries
 - **Cross-Platform**: CLI, Gateway, UI, and service presence reporting
 - **CLI Monitoring**: `krab presence list/stats/update`
 
-### 📨 **Advanced Message Handling**
+### Advanced Message Handling
 
 - **Inbound Debouncing**: Configurable delays to prevent spam (channel-specific timing)
 - **Message Queueing**: Lane-aware FIFO with multiple modes (steer/followup/collect/interrupt)
 - **History Context**: Group chat context wrapping with configurable limits
 - **Overflow Management**: Intelligent message dropping with summarize/old/new policies
 
-### 🔄 **Retry & Resilience**
+### Retry & Resilience
 
 - **Exponential Backoff**: Configurable retry with jitter for collision avoidance
 - **Channel Optimization**: Provider-specific delays (Telegram 400ms, Discord 500ms)
 - **Error Classification**: Automatic retry for network errors and 5xx HTTP status codes
 - **Type Safety**: Full TypeScript support with generic retry wrappers
 
-### 🔐 **OAuth Authentication**
+### OAuth Authentication
 
 - **Multi-Provider OAuth**: Anthropic, OpenAI, Google with configurable OAuth flows
 - **Token Lifecycle**: Automatic refresh, expiry detection, and secure storage
 - **Profile Management**: Multiple auth profiles per provider (OAuth/API keys/setup tokens)
 - **Secure Storage**: JSON-based credential management in `~/.krab/auth-profiles.json`
 
-### 🧠 **Memory Systems**
+### Memory Systems
 
 - **Markdown Storage**: Daily logs and long-term memory with human-readable format
 - **Vector Search**: Semantic search capabilities for memory retrieval
 - **Memory Tools**: `memory_search`, `memory_get`, `memory_write`, `memory_list`
 - **Context Injection**: Memory content loaded into system prompts for appropriate sessions
 
-## ✨ Key Features (2026 Complete Stack)
+## Core Features (2026 Complete Stack)
 
-### 🎨 **Creative & Media**
+### Creative & Media
 
 - **Image Generation**: AI-powered image creation and editing
 - **Voice Intelligence**: Speech-to-text and text-to-speech with multiple providers
 
-### 🖥️ **Automation & Control**
+### Automation & Control
 
 - **Desktop Control**: Mouse, keyboard, and screen automation with computer vision
 - **Web Automation**: Browser control and data extraction with Playwright
 - **Code Execution**: Safe multi-language programming environment
 
-### 🤝 **Collaboration & Communication**
+### Collaboration & Communication
 
 - **Multi-Agent System**: Agent coordination and task delegation
 - **MCP Integration**: Model Context Protocol for inter-agent communication
 - **Task Scheduling**: Automated cron-based task execution
 
-### 🧠 **Knowledge & Extensibility**
+### Knowledge & Extensibility
 
-- **Obsidian Integration** ❤️ - **Advanced Knowledge Management**: TF-IDF semantic search, knowledge graph analysis, AI synthesis, real-time sync, 15+ sophisticated tools
-- **Plugin Ecosystem**: Lego-style modular architecture. Add new tools, agents, or middleware without touching core code.
+- **Obsidian Integration**: Advanced knowledge management with TF-IDF semantic search, knowledge graph analysis, AI synthesis, and real-time synchronization
+- **Plugin Ecosystem**: Modular architecture for adding new tools, agents, or middleware
 
-### 📊 **Enterprise Features**
+### Enterprise Features
 
-- **Advanced Analytics**: Performance monitoring and Vercel AI tracing
+- **Advanced Analytics**: Performance monitoring and AI tracing
 - **Security System**: Enterprise-grade authentication, authorization, and audit logging
 - **Cloud Deployment**: Scalable infrastructure and gateway server
 
-### 🔧 **Developer Tools**
+### Developer Tools
 
 - **SDK Integration**: Complete development toolkit
 - **Web Interface**: Real-time collaborative chat platform
 - **Desktop Application**: Electron-based client
 
-## 🧩 **Plugin Ecosystem (Lego Architecture)**
+## Plugin Ecosystem
 
-Krab is designed to be infinitely extensible. Our plugin system allows you to create your own "blocks" and plug them in seamlessly.
+Krab supports a powerful, extensible plugin system for communication channels and additional functionality:
 
-```bash
-# Create a new tool plugin in seconds
-krab plugins create my-custom-tool --type tool
+- **Telegram Channel**: Integration via grammY with automatic message routing
+- **WhatsApp Channel**: Multi-device support via Baileys (QR code authentication)
+- **Discord Channel**: Full bot support with DM and channel integration
+- **Web Control UI**: Modern dashboard for monitoring gateway status and managing active channels
 
-# Install a local plugin
-krab plugins install ./my-plugin-folder
+### Advanced Features
 
-# List all plugins
-krab plugins list
-```
+- **Multi-Agent Routing**: Route messages to specific agents based on sender/workspace
+- **Session Isolation**: Each communication session maintains its own memory and context
+- **Vector Memory**: Long-term semantic search across all conversations
+- **Service Installation**: System service installation on Windows, Linux, and macOS
 
----
-
-## � **Release Checklist**
-
-- [ ] Ensure all tests pass with `npm test`
-- [ ] Update `CHANGELOG.md` with changes since the last release
-- [ ] Verify documentation in `README.md` is up-to-date
-- [ ] Tag the release with `git tag vX.Y.Z`
-- [ ] Push tags to GitHub with `git push origin vX.Y.Z`
-- [ ] Publish to npm if applicable with `npm publish`
-- [ ] Create a GitHub release with detailed notes
-
-## ⚖️ **Parity Status vs OpenClaw**
-
-- **Core Architecture**: High parity, with similar multi-agent routing and session management
-- **Runtime Resilience/Governance**: High parity, with cancellation propagation and tool policy hooks
-- **Operator Tooling**: Medium to high parity, with improved TUI dashboard and CLI diagnostics
-- **End-to-End Product Polish**: Not yet fully parity, with gaps in message/runtime cohesion and workflow maturity
-
-For detailed comparison, see the [Parity Tracker](https://github.com/OpenKrab/Krab/issues) on GitHub.
-
-## � Quick Start
-
-### ⭐ **Star the Repository!**
-
-If you find Krab useful, please give us a ⭐ on GitHub!
-
-[![GitHub stars](https://img.shields.io/github/stars/OpenKrab/Krab?style=social)](https://github.com/OpenKrab/Krab)
-
-### 1. Installation
+## Installation
 
 ```bash
 git clone https://github.com/OpenKrab/Krab.git
@@ -335,7 +180,7 @@ cd Krab
 npm install --legacy-peer-deps
 ```
 
-### 2. Configuration
+## Configuration
 
 Copy the example environment file:
 
@@ -343,10 +188,12 @@ Copy the example environment file:
 cp .env.example .env
 ```
 
-Add your preferred API key (e.g., `GEMINI_API_KEY`, `KILOCODE_API_KEY`, `OPENAI_API_KEY`).
+Configure your preferred API key (e.g., `GEMINI_API_KEY`, `KILOCODE_API_KEY`, `OPENAI_API_KEY`).
 For Obsidian support, set `OBSIDIAN_VAULT_PATH=/path/to/your/vault`.
 
-### 3. Build & Run
+## Usage
+
+### Build & Run
 
 ```bash
 npm run build
@@ -359,9 +206,7 @@ Or use development mode:
 npm run dev
 ```
 
-Runtime state, secrets, and profile data are now resolved through Krab state directories. Use `krab --dev ...` or `krab --profile <name> ...` to isolate gateway, secrets, sessions, and runtime metadata.
-
-## 🎯 Usage Examples
+Runtime state, secrets, and profile data are managed through Krab state directories. Use `krab --dev ...` or `krab --profile <name> ...` to isolate gateway, secrets, sessions, and runtime metadata.
 
 ### Interactive Chat
 
@@ -375,7 +220,7 @@ npm start chat
 npm start tui
 ```
 
-The dashboard TUI now includes live gateway runtime status, tool execution diagnostics, routing diagnostics, subagent runtime visibility, semantic-first hybrid memory lookup shortcuts, and operator controls for subagent cancellation plus diagnostics drilldown/filtering. These controls sit on top of the same shared runtime state used by the gateway and CLI status surfaces, so operator views, cancellation requests, and diagnostics reflect the active runtime instead of a separate TUI-only state model.
+The dashboard TUI includes live gateway runtime status, tool execution diagnostics, routing diagnostics, subagent runtime visibility, and operator controls for subagent cancellation and diagnostics drilldown/filtering.
 
 ### Quick Questions
 
@@ -401,7 +246,7 @@ npm start ask "Write a Python script to analyze this dataset"
 npm start ask "Take a screenshot and save it to desktop"
 ```
 
-## 🛠️ Available Commands
+## Available Commands
 
 ### Core Commands
 
@@ -458,25 +303,7 @@ npm start ask "Take a screenshot and save it to desktop"
 - `krab memory search <query>` - Search memory system
 - `krab secrets list|set|get|remove` - Manage state-aware secrets in the active Krab profile
 
-## ⚖️ Non-Dashboard Parity Report
-
-Krab is being aligned toward OpenClaw parity in the core operator path without expanding into the full OpenClaw app and extension ecosystem.
-
-### Current parity status
-
-- **Provider/runtime polish**: strong parity in deterministic provider detection, CLI diagnostics, and fallback visibility.
-- **Gateway/runtime contracts**: improved parity with shared runtime snapshot data for gateway, sessions, presence, and queue state.
-- **Operator CLI surfaces**: improved parity for `models`, `gateway`, `doctor`, `session`, `presence`, and `memory` workflows.
-- **Memory retrieval**: partial parity with hybrid file + conversation + semantic retrieval, but not yet at OpenClaw's indexing depth.
-- **Docs/workflows**: improving, but still lighter than OpenClaw's dedicated docs platform and runbook coverage.
-
-### Still intentionally out of scope in this parity pass
-
-- Dashboard-specific parity work
-- Full OpenClaw extension ecosystem parity
-- Native/mobile/web product-surface parity
-
-### In-Chat Commands
+## In-Chat Commands
 
 - `/plugins` - Show loaded plugins and their status
 - `/tools` - View all loaded tools and permissions
@@ -492,15 +319,15 @@ Krab is being aligned toward OpenClaw parity in the core operator path without e
 - `/clear` - Clear conversation memory
 - `/help` - Show available commands
 
-## 🏗️ Architecture
+## Architecture
 
-### ✅ **Completed Features (Phase 1-4)**
+### Completed Features
 
 1. **Core AGI Engine** - Advanced reasoning and tool integration with OpenClaw routing
 2. **Voice Intelligence** - Complete STT/TTS system with multiple providers
 3. **Desktop Automation** - Mouse, keyboard, vision control with computer vision
 4. **Web Automation** - Browser control and data extraction with Playwright
-5. **Code Execution** - Safe multi-language programming with enhanced security
+5. **Code Execution** - Safe multi-language programming environment
 6. **Creative AI** - Image generation and media processing with streaming
 7. **Cloud Infrastructure** - Enterprise deployment and monitoring with presence tracking
 8. **Desktop Application** - Modern Electron UI with multi-agent support
@@ -513,7 +340,7 @@ Krab is being aligned toward OpenClaw parity in the core operator path without e
 15. **Browser Agent** - Web automation with AI vision
 16. **Security Enhancements** - Enterprise security and compliance with OAuth
 17. **Obsidian Integration** - Deep Knowledge Base connection with memory system
-18. **Plugin Ecosystem** - Lego-style modular architecture
+18. **Plugin Ecosystem** - Modular architecture
 19. **Testing & Validation** - Framework testing and validation
 20. **Session Management** - OpenClaw-inspired session isolation and persistence
 21. **Presence Tracking** - Real-time instance monitoring with TTL cleanup
@@ -530,29 +357,23 @@ Krab is being aligned toward OpenClaw parity in the core operator path without e
 
 ### Runtime Notes
 
-- Gateway OpenAI-compatible chat routes now propagate disconnect-triggered cancellation for both HTTP and WebSocket request lifecycles.
-- Tool policy decisions flow through centralized evaluation plus configurable pre/post policy hook stages, which keeps approval, denial, and diagnostics behavior aligned across routed agents.
-- Hybrid memory retrieval combines ranked file memory, stored conversation history, and semantic conversation hits before surfacing results to tools and operator flows.
-- Abort propagation is best-effort by transport: paths that use `fetch()` or SDKs with signal support can be interrupted directly, while transports without native abort support still fall back to cooperative cancellation behavior.
+- Gateway OpenAI-compatible chat routes now propagate disconnect-triggered cancellation for both HTTP and WebSocket request lifecycles
+- Tool policy decisions flow through centralized evaluation plus configurable pre/post policy hook stages, which keeps approval, denial, and diagnostics behavior aligned across routed agents
+- Hybrid memory retrieval combines ranked file memory, stored conversation history, and semantic conversation hits before surfacing results to tools and operator flows
+- Abort propagation is best-effort by transport: paths that use `fetch()` or SDKs with signal support can be interrupted directly, while transports without native abort support still fall back to cooperative cancellation behavior
 
-### 🚧 **Future Enhancements (Phase 5)**
-
-- **Mobile Apps** - React Native iOS/Android applications
-- **Advanced Enterprise** - Custom deployment configurations
-- **Real-time Collaboration** - Enhanced multi-user features
-
-## 🔧 Built-in Tools
+## Built-in Tools
 
 Krab includes 60+ powerful tools across 19 feature categories:
 
-### **System Tools**
+### System Tools
 
 - `get_datetime` - Time and timezone awareness
 - `shell` - Safe shell execution with approval
 - `web_search` - Hybrid search capabilities
 - `file_ops` - File system operations
 
-### **Knowledge Tools (Obsidian) — 15+ Advanced Tools**
+### Knowledge Tools (Obsidian)
 
 - `obsidian_read_note` - Read specific notes with full metadata
 - `obsidian_search_notes` - Basic text search across vault
@@ -570,47 +391,47 @@ Krab includes 60+ powerful tools across 19 feature categories:
 - `obsidian_sync_status` - Monitor sync state
 - `obsidian_vault_stats` - Comprehensive vault analytics
 
-### **Session Management Tools — 4 Advanced Tools**
+### Session Management Tools
 
 - `sessions_list` - List all active sessions with filtering
 - `sessions_history` - Retrieve message history with tool result filtering
 - `sessions_send` - Send messages between sessions with timeout handling
 - `sessions_spawn` - Create new agent sessions dynamically
 
-### **Memory System Tools — 4 Advanced Tools**
+### Memory System Tools
 
 - `memory_search` - Semantic search across memory system
 - `memory_get` - Retrieve specific memory entries
 - `memory_write` - Store new information in memory
 - `memory_list` - List memory entries with filtering
 
-### **Enhanced Tool System**
+### Enhanced Tool System
 
 - `exec` - Elevated execution with approval workflows and security controls
 - `tool_registry` - Advanced tool discovery with approval gates
 
-### **Creative Tools**
+### Creative Tools
 
 - `image_generate` - AI image generation
 - `image_edit` - Image manipulation
 - `voice_speak` - Text-to-speech
 - `voice_transcribe` - Speech-to-text
 
-### **Automation Tools**
+### Automation Tools
 
 - `browser_navigate` - Web browsing
 - `computer_click` - Desktop control
 - `computer_type` - Keyboard automation
 - `code_execute` - Multi-language code execution
 
-### **Enterprise Tools**
+### Enterprise Tools
 
 - `security_auth` - Authentication
 - `analytics_trace` - Performance monitoring
 - `scheduler_task` - Task scheduling
 - `mcp_connect` - Agent communication
 
-## 🛡️ Security
+## Security
 
 Krab implements enterprise-grade security:
 
@@ -621,31 +442,15 @@ Krab implements enterprise-grade security:
 - **Authentication**: User management and access control
 - **Authorization**: Role-based permissions
 
-## 📊 Performance
+## Performance
 
-- **Lightweight**: < 50 dependencies total
-- **Fast**: < 1s startup time
+- **Lightweight**: Less than 50 dependencies total
+- **Fast**: Sub-1-second startup time
 - **Efficient**: Parallel tool execution
 - **Scalable**: Cloud-ready architecture
 - **Reliable**: 99.9% uptime capability
 
-### 🔌 Krab Plugin System
-
-Krab now supports a powerful, extensible plugin system for communication channels and more:
-
-- **Telegram Channel**: Integration via grammY with automatic message routing.
-- **WhatsApp Channel**: Multi-device support via Baileys (scan QR to connect).
-- **Discord Channel**: Full bot support with DM and channel integration.
-- **Web Control UI**: A modern, glassmorphic dashboard for monitoring gateway status and managing active channels.
-
-### 🛣️ Advanced Features
-
-- **Multi-Agent Routing**: Route messages to specific agents based on sender/workspace.
-- **Session Isolation**: Each communication session maintains its own memory and context.
-- **Vector Memory**: Long-term semantic search across all conversations.
-- **Service Installation**: Easily install Krab Gateway as a system service on Windows, Linux, and macOS.
-
-## 📱 Deployment Platforms
+## Deployment Platforms
 
 - [Raspberry Pi Deployment Guide](./docs/raspberry-pi.md)
 - [Gateway Setup Guide](./docs/gateway.md)
@@ -654,7 +459,7 @@ Krab now supports a powerful, extensible plugin system for communication channel
 - [Railway Deployment Guide](./docs/railway-deployment.md)
 - [Render Deployment Guide](./docs/render-deployment.md)
 
-## 🌐 Providers
+## AI Providers
 
 Krab supports 15+ LLM providers:
 
@@ -663,32 +468,32 @@ Krab supports 15+ LLM providers:
 - **Local**: Ollama, LM Studio
 - **Enterprise**: Azure OpenAI, Google Cloud AI
 
-## 🤝 Contributing
+## Contributing
 
-We welcome contributions! Please see our [Contributing Guide](https://github.com/OpenKrab/Krab/blob/main/CONTRIBUTING.md) for details.
+We welcome contributions. Please see our [Contributing Guide](https://github.com/OpenKrab/Krab/blob/main/CONTRIBUTING.md) for details.
 
-## 📄 License
+## License
 
 MIT License - see [LICENSE](https://github.com/OpenKrab/Krab/blob/main/LICENSE) file for details.
 
 ---
 
 <div align="center">
-  <p><b>🦀 Krab — Complete AGI Framework for 2026</b></p>
-  <p><i>OpenClaw-Inspired Architecture with Session Management, Multi-Agent Systems, and Enterprise Features</i></p>
-  <p><b>28+ Features • 70+ Tools • Extension Ready • Production-Tested</b></p>
-  
+  <p><strong>Krab — Complete AGI Framework for 2026</strong></p>
+  <p><em>OpenClaw-Inspired Architecture with Session Management, Multi-Agent Systems, and Enterprise Features</em></p>
+  <p><strong>28+ Features • 70+ Tools • Extension Ready • Production-Tested</strong></p>
+
   <br>
-  
+
   <!-- GitHub Star Button -->
   <a href="https://github.com/OpenKrab/Krab">
     <img src="https://img.shields.io/github/stars/OpenKrab/Krab?style=for-the-badge&logo=github&logoColor=white&labelColor=black&color=black" alt="GitHub Stars">
   </a>
-  
+
   <br>
   <br>
-  
-  <sub><i>⭐ Star us on GitHub to support the project!</i></sub>
+
+  <sub><em>Star us on GitHub to support the project!</em></sub>
 </div>
 
 [![Star History Chart](https://api.star-history.com/svg?repos=OpenKrab/Krab&type=Date)](https://star-history.com/#OpenKrab/Krab&Date)
